@@ -404,39 +404,25 @@ def main():
                 pass
                 
         # First get and validate API key regardless of configuration state
-        send_log(f"\n{BLUE}{BOLD}=== API Key Configuration ==={NC}\n", "🔑")
-        send_log(f"{BOLD}Obtaining and validating API key...{NC}", "🔑")
         operative_key = get_and_validate_api_key()
         if not operative_key:
-            send_log(f"{RED}✗ Critical: Operative API key could not be obtained or validated. Exiting.{NC}", "❌")
             return # Exit if no key
             
-        send_log(f"{BOLD}Using Operative API Key ending with ...{operative_key[-4:] if len(operative_key) > 4 else operative_key}{NC}", "🔑")
         
         # If not already configured, set up the MCP configuration with the API key
         if not is_already_configured:
-            send_log(f"\n{BLUE}{BOLD}=== Setting up configuration ==={NC}\n", "⚙️")
             # Configure MCP with API key
             _configure_cursor_mcp_json(agent_project_path, operative_key)
 
             # Ensure Playwright browsers are installed
-            send_log(f"\n{BLUE}{BOLD}=== Checking dependencies ==={NC}\n", "🔍")
-            send_log(f"{BOLD}Checking for Playwright browser installation...{NC}", "🔍")
             ensure_playwright_browsers()
-            
-            # Installation complete; instruct user to restart and exit
-            send_log(f"\n{BLUE}{BOLD}=== Installation Complete! 🎉 ==={NC}\n", "✅")
-            send_log(f"{RED}{BOLD}⚠️ IMPORTANT: Please restart Cursor for these changes to take effect!{NC}", "⚠️")
             return
         else:
             # We're running in server mode - don't update MCP config as it's already configured
-            send_log(f"{BOLD}Found existing configuration. Using current settings.{NC}", "📝")
-            
-            send_log(f"{BOLD}API key validated. Starting MCP server...{NC}", "🛰️")
             # Run the FastMCP server
             mcp.run(transport='stdio')
 
-    except ValueError as e: # Catch API key validation errors from get_and_validate_api_key
+    except ValueError as e:
         send_log(f"{RED}✗ Agent startup failed due to API key issue: {e}{NC}", "❌")
     except Exception as e:
         send_log(f"{RED}✗ An unexpected error occurred during agent startup: {e}\n{traceback.format_exc()}{NC}", "❌")
