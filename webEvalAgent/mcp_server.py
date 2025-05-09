@@ -24,12 +24,9 @@ os.environ["ANONYMIZED_TELEMETRY"] = 'false'
 # MCP imports
 from mcp.server.fastmcp import FastMCP, Context
 from mcp.types import TextContent
-# Removing the problematic import
-# from mcp.server.tool import Tool, register_tool
 
 # Import our modules
 from webEvalAgent.src.browser_manager import PlaywrightBrowserManager
-# from webEvalAgent.src.browser_utils import cleanup_resources # Removed import
 from webEvalAgent.src.api_utils import validate_api_key
 from webEvalAgent.src.tool_handlers import handle_web_evaluation, handle_setup_browser_state
 
@@ -47,11 +44,7 @@ mcp = FastMCP("Operative")
 # Define the browser tools
 class BrowserTools(str, Enum):
     WEB_EVAL_AGENT = "web_eval_agent"
-    SETUP_BROWSER_STATE = "setup_browser_state"  # Add new tool enum
-
-# Parse command line arguments (keeping the parser for potential future arguments)
-# parser = argparse.ArgumentParser(description='Run the MCP server with browser debugging capabilities')
-# args = parser.parse_args()
+    SETUP_BROWSER_STATE = "setup_browser_state"
 
 # --- Start of new/modified functions ---
 
@@ -356,7 +349,7 @@ async def web_eval_agent(url: str, task: str, ctx: Context, headless_browser: bo
         )
     except Exception as e:
         tb = traceback.format_exc()
-        send_log(f"{RED}✗ Error executing web_eval_agent: {str(e)}\\nTraceback:\\n{tb}{NC}", "❌") # Using send_log
+        send_log(f"{RED}✗ Error executing web_eval_agent: {str(e)}\\nTraceback:\\n{tb}{NC}", "❌")
         return [TextContent(
             type="text",
             text=f"Error executing web_eval_agent: {str(e)}\\n\\nTraceback:\\n{tb}"
@@ -398,7 +391,7 @@ async def setup_browser_state(url: str = None, ctx: Context = None) -> list[Text
         )
     except Exception as e:
         tb = traceback.format_exc()
-        send_log(f"{RED}✗ Error executing setup_browser_state: {str(e)}\\nTraceback:\\n{tb}{NC}", "❌") # Using send_log
+        send_log(f"{RED}✗ Error executing setup_browser_state: {str(e)}\\nTraceback:\\n{tb}{NC}", "❌")
         return [TextContent(
             type="text",
             text=f"Error executing setup_browser_state: {str(e)}\n\nTraceback:\n{tb}"
@@ -406,13 +399,13 @@ async def setup_browser_state(url: str = None, ctx: Context = None) -> list[Text
 
 def main():
     # Print the ASCII logo
-    print(OPERATIVE_LOGO)
-    print(f"\n{BLUE}{BOLD}=== 🚀 Welcome to the Operative Web Eval Agent ===\n{NC}")
+    send_log(OPERATIVE_LOGO, "🚀")
+    send_log(f"\n{BLUE}{BOLD}=== 🚀 Welcome to the Operative Web Eval Agent ===\n{NC}", "🚀")
     
     try:
         send_log(f"{BOLD}Operative Web Eval Agent starting up...{NC}", "🚀")
         
-        # 0. Determine agent's project path for MCP configuration
+        # Determine agent's project path for MCP configuration
         # Assuming mcp_server.py is in webEvalAgent/ directory, and project root is parent of that.
         # Path(__file__).resolve() gives path to mcp_server.py
         # .parent gives webEvalAgent/
@@ -444,7 +437,7 @@ def main():
                 pass
                 
         # First get and validate API key regardless of configuration state
-        print(f"\n{BLUE}{BOLD}=== API Key Configuration ==={NC}\n")
+        send_log(f"\n{BLUE}{BOLD}=== API Key Configuration ==={NC}\n", "🔑")
         send_log(f"{BOLD}Obtaining and validating API key...{NC}", "🔑")
         operative_key = get_and_validate_api_key()
         if not operative_key:
@@ -455,17 +448,17 @@ def main():
         
         # If not already configured, set up the MCP configuration with the API key
         if not is_already_configured:
-            print(f"\n{BLUE}{BOLD}=== Setting up configuration ==={NC}\n")
+            send_log(f"\n{BLUE}{BOLD}=== Setting up configuration ==={NC}\n", "⚙️")
             # Configure MCP with API key
             _configure_cursor_mcp_json(agent_project_path, operative_key)
 
             # Ensure Playwright browsers are installed
-            print(f"\n{BLUE}{BOLD}=== Checking dependencies ==={NC}\n")
+            send_log(f"\n{BLUE}{BOLD}=== Checking dependencies ==={NC}\n", "🔍")
             send_log(f"{BOLD}Checking for Playwright browser installation...{NC}", "🔍")
             ensure_playwright_browsers()
             
             # Installation complete; instruct user to restart and exit
-            print(f"\n{BLUE}{BOLD}=== Installation Complete! 🎉 ==={NC}\n")
+            send_log(f"\n{BLUE}{BOLD}=== Installation Complete! 🎉 ==={NC}\n", "✅")
             send_log(f"{RED}{BOLD}⚠️ IMPORTANT: Please restart Cursor for these changes to take effect!{NC}", "⚠️")
             return
         else:
@@ -483,8 +476,6 @@ def main():
     finally:
         send_log(f"{BOLD}Operative Web Eval Agent shutting down.{NC}", "🏁")
         send_log(f"{BOLD}Built with ❤️ by Operative.sh{NC}", "📝")
-        # Ensure resources are cleaned up
-        # asyncio.run(cleanup_resources()) # Cleanup now handled in browser_utils
 
 if __name__ == "__main__":
     main() # Call the main function which now includes setup.
