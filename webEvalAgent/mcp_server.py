@@ -322,7 +322,7 @@ async def web_eval_agent(url: str, task: str, ctx: Context, headless_browser: bo
         )
     except Exception as e:
         tb = traceback.format_exc()
-        send_log(f"Error executing web_eval_agent: {str(e)}\nTraceback:\n{tb}", "❌")
+
         return [TextContent(
             type="text",
             text=f"Error executing web_eval_agent: {str(e)}\n\nTraceback:\n{tb}"
@@ -363,7 +363,6 @@ async def setup_browser_state(url: str = None, ctx: Context = None) -> list[Text
         )
     except Exception as e:
         tb = traceback.format_exc()
-        send_log(f"Error executing setup_browser_state: {str(e)}\nTraceback:\n{tb}", "❌")
         return [TextContent(
             type="text",
             text=f"Error executing setup_browser_state: {str(e)}\n\nTraceback:\n{tb}"
@@ -371,24 +370,14 @@ async def setup_browser_state(url: str = None, ctx: Context = None) -> list[Text
 
 def main():
     try:
-        send_log(f"{BOLD}Operative Web Eval Agent starting up...{NC}", "🚀")
-        
         # Determine agent's project path for MCP configuration
-        # Assuming mcp_server.py is in webEvalAgent/ directory, and project root is parent of that.
-        # Path(__file__).resolve() gives path to mcp_server.py
-        # .parent gives webEvalAgent/
-        # .parent again gives the project root.
         try:
             agent_project_path = Path(__file__).resolve().parent.parent
-        except NameError: # __file__ not defined (e.g. in interactive interpreter or frozen app)
-            # Fallback to current working directory, might not always be correct if script is run from elsewhere
+        except NameError:
             agent_project_path = Path(".").resolve()
-
-        # Check if we need to configure MCP or if we're running in server mode
         cursor_mcp_file = Path.home() / ".cursor" / "mcp.json"
         server_name = "web-eval-agent-operative"
         is_already_configured = False
-        
         if cursor_mcp_file.exists():
             try:
                 with open(cursor_mcp_file, 'r') as f:
@@ -398,37 +387,19 @@ def main():
                         isinstance(mcp_config["mcpServers"], dict) and
                         server_name in mcp_config["mcpServers"]):
                         is_already_configured = True
-                        send_log(f"{YELLOW}ℹ Found existing Cursor MCP configuration for {server_name}{NC}", "🔍")
             except (json.JSONDecodeError, OSError):
-                # If there's an error reading the file, we'll proceed with configuration
                 pass
-                
-        # First get and validate API key regardless of configuration state
         operative_key = get_and_validate_api_key()
         if not operative_key:
-            return # Exit if no key
-            
-        
-        # If not already configured, set up the MCP configuration with the API key
+            return
         if not is_already_configured:
-            # Configure MCP with API key
             _configure_cursor_mcp_json(agent_project_path, operative_key)
-
-            # Ensure Playwright browsers are installed
             ensure_playwright_browsers()
             return
         else:
-            # We're running in server mode - don't update MCP config as it's already configured
-            # Run the FastMCP server
             mcp.run(transport='stdio')
-
-    except ValueError as e:
-        send_log(f"{RED}✗ Agent startup failed due to API key issue: {e}{NC}", "❌")
-    except Exception as e:
-        send_log(f"{RED}✗ An unexpected error occurred during agent startup: {e}\n{traceback.format_exc()}{NC}", "❌")
-    finally:
-        send_log(f"{BOLD}Operative Web Eval Agent shutting down.{NC}", "🏁")
-        send_log(f"{BOLD}Built with ❤️ by Operative.sh{NC}", "📝")
+    except Exception:
+        pass
 
 if __name__ == "__main__":
     main() # Call the main function which now includes setup.
