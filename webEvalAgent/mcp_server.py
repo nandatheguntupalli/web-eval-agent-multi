@@ -313,22 +313,6 @@ def get_and_validate_api_key():
                 send_log(f"{RED}✗ API key validation failed. Exiting.{NC}", "❌")
                 raise ValueError("Invalid API key and user chose not to retry.")
 
-# --- End of new/modified functions ---
-
-# Get API key from environment variable
-# This initial check is now handled by get_and_validate_api_key() in main()
-# api_key = os.environ.get('OPERATIVE_API_KEY') 
-
-# Validate the API key
-# This initial validation is now handled by get_and_validate_api_key() in main()
-# if api_key:
-#     is_valid = asyncio.run(validate_api_key_original(api_key)) # Use renamed original
-#     if not is_valid:
-#         print("Error: Invalid API key. Please provide a valid OperativeAI API key in the OPERATIVE_API_KEY environment variable.")
-# else:
-#     print("Error: No API key provided. Please set the OPERATIVE_API_KEY environment variable.")
-
-
 @mcp.tool(name=BrowserTools.WEB_EVAL_AGENT)
 async def web_eval_agent(url: str, task: str, ctx: Context, headless_browser: bool = False) -> list[TextContent]:
     """Evaluate the user experience / interface of a web application.
@@ -377,39 +361,6 @@ async def web_eval_agent(url: str, task: str, ctx: Context, headless_browser: bo
             type="text",
             text=f"Error executing web_eval_agent: {str(e)}\\n\\nTraceback:\\n{tb}"
         )]
-
-# if __name__ == "__main__": # Keep this for direct testing if needed, but ensure API key is handled.
-#     try:
-#         # Ensure setup for direct run
-#         ensure_playwright_browsers()
-#         OPERATIVE_API_KEY_HOLDER["key"] = get_and_validate_api_key() # Ensures key for direct run
-        
-#         send_log(f"Running test evaluation with key: {OPERATIVE_API_KEY_HOLDER['key']}", "🧪")
-
-#         async def run_test_eval():
-#             # Need a dummy Context object for direct testing
-#             class DummyContext:
-#                 async def send_chunk(self, content):
-#                     send_log(f"DummyContext chunk: {content}", "📦")
-#                 async def send_message(self, message_type, content):
-#                     send_log(f"DummyContext message ({message_type}): {content}", "📦")
-            
-#             await web_eval_agent(
-#                 url="http://localhost:5173", 
-#                 task="general eval", 
-#                 working_directory=".", 
-#                 ctx=DummyContext() # Pass a dummy context
-#             )
-        
-#         asyncio.run(run_test_eval())
-#     except ValueError as e: # Catch API key validation errors from get_and_validate_api_key
-#         send_log(f"Setup for direct run failed: {e}", "❌")
-#     except Exception as e:
-#         send_log(f"Error during direct test run: {e}\n{traceback.format_exc()}", "❌")
-#     finally:
-#         # Ensure resources are cleaned up
-#         # asyncio.run(cleanup_resources()) # Cleanup now handled in browser_utils
-#         send_log("Direct test run finished.", "🏁")
 
 @mcp.tool(name=BrowserTools.SETUP_BROWSER_STATE)
 async def setup_browser_state(url: str = None, ctx: Context = None) -> list[TextContent]:
