@@ -63,73 +63,107 @@ BOLD = '\033[1m'
 def ensure_playwright_browsers():
     """Checks and installs Playwright browsers if necessary."""
     try:
+        send_log(f"{BOLD}Checking and installing Playwright browsers if necessary...{NC}", "🚀")
         # Using playwright's Python API to check/install is more robust if available.
         # For now, calling the CLI command.
         # Ensure playwright is in the path for uvx environment.
         process = subprocess.run(["playwright", "install", "--with-deps"], capture_output=True, text=True, check=False, timeout=300)
         if process.returncode == 0:
+            send_log(f"{GREEN}✓ Playwright browsers are installed successfully{NC}", "✅")
             if process.stdout:
-                pass
+                send_log(f"Playwright install STDOUT: {process.stdout.strip()}", "⚙️")
             if process.stderr:
-                pass
+                send_log(f"Playwright install STDERR: {process.stderr.strip()}", "⚙️")
+        else:
+            send_log(f"Playwright browser installation command finished with code {process.returncode}.", "⚠️")
+            send_log(f"Playwright install STDOUT: {process.stdout.strip()}", "⚙️")
+            send_log(f"Playwright install STDERR: {process.stderr.strip()}", "⚙️")
             # Not raising an error here to allow the agent to attempt to start,
             # but logging a significant warning. Tool usage will likely fail.
-            pass
+            send_log(f"{RED}✗ Playwright browser installation may have failed. The agent might not function correctly.{NC}", "❌")
     except FileNotFoundError:
-        pass
+        send_log(f"{RED}✗ Playwright command not found. Ensure Playwright is installed in the environment.{NC}", "❌")
+        raise Exception("Playwright command not found. Cannot ensure browser installation.")
     except subprocess.TimeoutExpired:
-        pass
+        send_log(f"{RED}✗ Playwright browser installation timed out after 5 minutes.{NC}", "❌")
+        raise Exception("Playwright browser installation timed out.")
     except Exception as e:
-        pass # Re-raise critical errors
+        send_log(f"{RED}✗ Error during Playwright browser setup: {e}{NC}", "❌")
+        raise # Re-raise critical errors
 
 def _configure_cursor_mcp_json(agent_project_path: Path, api_key=None):
     """Attempts to automatically configure Cursor's mcp.json file."""
     cursor_mcp_file = Path.home() / ".cursor" / "mcp.json"
     server_name = "web-eval-agent-operative"
     
-    if cursor_mcp_file.exists():
-        with open(cursor_mcp_file, 'r') as f:
-            try:
-                mcp_config = json.load(f)
-                if not isinstance(mcp_config, dict):
-                    mcp_config = {"mcpServers": {}}
-                if "mcpServers" not in mcp_config or not isinstance(mcp_config.get("mcpServers"), dict):
-                    mcp_config["mcpServers"] = {}
-            except json.JSONDecodeError:
+    send_log(f"{BOLD}Attempting to configure Cursor MCP server at {cursor_mcp_file}...{NC}", "⚙️")
+
+    mcp_config = {"mcpServers": {}}
+    try:
+        if cursor_mcp_file.exists():
+            send_log(f"{YELLOW}ℹ Found existing Cursor MCP file: {cursor_mcp_file}{NC}", "🔍")
+            with open(cursor_mcp_file, 'r') as f:
                 try:
-                    backup_path = cursor_mcp_file.with_suffix(".json.bak")
-                    cursor_mcp_file.rename(backup_path)
-                except OSError as e_backup:
-                    pass
-                mcp_config = {"mcpServers": {}}
-    else:
-        # Ensure .cursor directory exists
-        cursor_mcp_file.parent.mkdir(parents=True, exist_ok=True)
+                    mcp_config = json.load(f)
+                    if not isinstance(mcp_config, dict):
+                        send_log(f"{YELLOW}ℹ Cursor MCP file is not a valid JSON object. Reinitializing.{NC}", "⚠️")
+                        mcp_config = {"mcpServers": {}}
+                    if "mcpServers" not in mcp_config or not isinstance(mcp_config.get("mcpServers"), dict):
+                        send_log(f"{YELLOW}ℹ 'mcpServers' key missing or invalid in Cursor MCP file. Reinitializing.{NC}", "⚠️")
+                        mcp_config["mcpServers"] = {}
+                except json.JSONDecodeError:
+                    send_log(f"{YELLOW}ℹ Error decoding JSON from {cursor_mcp_file}. Backing up and creating new config.{NC}", "⚠️")
+                    try:
+                        backup_path = cursor_mcp_file.with_suffix(".json.bak")
+                        cursor_mcp_file.rename(backup_path)
+                        send_log(f"{BOLD}Backed up corrupted MCP file to {backup_path}{NC}", "🛡️")
+                    except OSError as e_backup:
+                        send_log(f"{RED}✗ Could not back up corrupted MCP file: {e_backup}{NC}", "❌")
+                    mcp_config = {"mcpServers": {}}
+        else:
+            send_log(f"{BOLD}Cursor MCP file not found. Creating new one at {cursor_mcp_file}{NC}", "📝")
+            # Ensure .cursor directory exists
+            cursor_mcp_file.parent.mkdir(parents=True, exist_ok=True)
 
-    server_config = {
-        "command": "uvx",
-        "args": [
-            "--from",
-            "git+https://github.com/nandatheguntupalli/web-eval-agent.git",
-            "webEvalAgent"
-        ],
-        "env": {}
-    }
+        server_config = {
+            "command": "uvx",
+            "args": [
+                "--from",
+                "git+https://github.com/nandatheguntupalli/web-eval-agent.git",
+                "webEvalAgent"
+            ],
+            "env": {}
+        }
+        
+        # Add API key to environment variables if provided
+        if api_key:
+            server_config["env"]["OPERATIVE_API_KEY"] = api_key
+            send_log(f"{GREEN}✓ API key added to Cursor MCP configuration{NC}", "✅")
+
+        # Add or update the server entry
+        mcp_config["mcpServers"][server_name] = server_config
+        send_log(f"{BOLD}Updating server entry for '{server_name}' in Cursor MCP config.{NC}", "🛠️")
+
+        with open(cursor_mcp_file, 'w') as f:
+            json.dump(mcp_config, f, indent=2)
+        
+        send_log(f"{GREEN}✓ Successfully updated Cursor MCP configuration at {cursor_mcp_file}.{NC}", "✅")
+        send_log(f"{RED}{BOLD}⚠️ IMPORTANT: Please restart Cursor for these changes to take effect!{NC}", "⚠️")
+        
+        return cursor_mcp_file, mcp_config
+
+    except OSError as e_os:
+        send_log(f"{RED}✗ OS Error updating Cursor MCP file {cursor_mcp_file}: {e_os}{NC}", "❌")
+        send_log(f"{YELLOW}ℹ Cursor MCP auto-configuration failed. Please configure manually.{NC}", "ℹ️")
+    except Exception as e_general:
+        send_log(f"{RED}✗ Unexpected error during Cursor MCP auto-configuration: {e_general}{NC}", "❌")
+        send_log(f"{YELLOW}ℹ Cursor MCP auto-configuration failed. Please configure manually.{NC}", "ℹ️")
     
-    # Add API key to environment variables if provided
-    if api_key:
-        server_config["env"]["OPERATIVE_API_KEY"] = api_key
-
-    # Add or update the server entry
-    mcp_config["mcpServers"][server_name] = server_config
-
-    with open(cursor_mcp_file, 'w') as f:
-        json.dump(mcp_config, f, indent=2)
-    
-    return cursor_mcp_file, mcp_config
+    return None, None
 
 def _validate_api_key_server_side(api_key_to_validate):
     """Validates API key with the backend server."""
+    send_log(f"{BOLD}Validating API key with Operative servers...{NC}", "➡️")
     try:
         response = requests.get(
             "https://operative-backend.onrender.com/api/validate-key",
@@ -139,15 +173,20 @@ def _validate_api_key_server_side(api_key_to_validate):
         response.raise_for_status()
         data = response.json()
         if data.get("valid"):
+            send_log(f"{GREEN}✓ API key validated successfully server-side.{NC}", "✅")
             return True, data.get("message", "Valid")
         else:
             error_message = data.get("message", "Unknown validation error.")
+            send_log(f"{RED}✗ API key validation failed: {error_message}{NC}", "❌")
             return False, error_message
     except requests.exceptions.Timeout:
+        send_log(f"{RED}✗ API key validation timed out.{NC}", "❌")
         return False, "Connection to validation server timed out."
     except requests.exceptions.RequestException as e:
+        send_log(f"{RED}✗ Could not connect to validation server: {e}{NC}", "❌")
         return False, f"Could not connect to validation server: {e}"
     except json.JSONDecodeError:
+        send_log(f"{RED}✗ Invalid JSON response from validation server.{NC}", "❌")
         return False, "Invalid JSON response from validation server."
 
 def get_and_validate_api_key():
@@ -157,6 +196,10 @@ def get_and_validate_api_key():
 
     # Check MCP config first if environment variable is not set
     if not api_key:
+        send_log(f"{YELLOW}ℹ API key not found in environment variables. Checking MCP config...{NC}", "🔍")
+        cursor_mcp_file = Path.home() / ".cursor" / "mcp.json"
+        server_name = "web-eval-agent-operative"
+        
         if cursor_mcp_file.exists():
             try:
                 with open(cursor_mcp_file, 'r') as f:
@@ -170,34 +213,43 @@ def get_and_validate_api_key():
                         api_key = mcp_config["mcpServers"][server_name]["env"]["OPERATIVE_API_KEY"]
                         source = "MCP config file"
             except (json.JSONDecodeError, OSError):
-                pass
+                send_log(f"{YELLOW}ℹ Error reading Cursor MCP config file. Cannot retrieve API key.{NC}", "⚠️")
     
     # Check legacy config file if MCP config doesn't have the key
     if not api_key:
+        send_log(f"{YELLOW}ℹ API key not found in MCP config. Checking legacy config...{NC}", "🔍")
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         if CONFIG_FILE.exists():
             try:
                 config_data = json.loads(CONFIG_FILE.read_text())
                 api_key = config_data.get("OPERATIVE_API_KEY")
                 source = "legacy config file"
             except json.JSONDecodeError:
+                send_log(f"{YELLOW}ℹ Error reading legacy API key config file ({CONFIG_FILE}). File might be corrupted.{NC}", "⚠️")
                 api_key = None # Ensure api_key is None if file is corrupt
         
     if api_key:
+        send_log(f"{YELLOW}ℹ API key found in {source}.{NC}", "📝")
         is_valid, msg = _validate_api_key_server_side(api_key)
         if is_valid:
             OPERATIVE_API_KEY_HOLDER["key"] = api_key
             return api_key
         else:
+            send_log(f"{YELLOW}ℹ Invalid API key from {source}: {msg}. Will prompt user.{NC}", "⚠️")
             api_key = None # Reset api_key to trigger prompt
 
     # Prompt user if no valid key found yet
     while True:
+        send_log(f"{BOLD}An Operative.sh API key is required for this installation.{NC}", "🔑")
+        send_log(f"If you don't have one, please visit {BOLD}https://operative.sh{NC} to get your key.", "🔑")
         try:
             prompted_key = input("Please enter your Operative.sh API key: ")
         except EOFError: # Happens if stdin is not available (e.g. background process)
-            raise ValueError("API Key could not be obtained via input. Configure it via environment or MCP config.")
+             send_log(f"{RED}✗ Could not read API key from input (EOFError). Ensure OPERATIVE_API_KEY is set in the environment or MCP config.{NC}", "❌")
+             raise ValueError("API Key could not be obtained via input. Configure it via environment or MCP config.")
 
         if not prompted_key:
+            send_log(f"{RED}✗ API key cannot be empty. Please try again.{NC}", "❌")
             continue
         
         is_valid, msg = _validate_api_key_server_side(prompted_key)
@@ -209,20 +261,23 @@ def get_and_validate_api_key():
                 # Update MCP config with API key
                 mcp_file, mcp_config = _configure_cursor_mcp_json(Path(".").resolve(), prompted_key)
                 if mcp_file:
-                    OPERATIVE_API_KEY_HOLDER["key"] = prompted_key
-                    return prompted_key
+                    send_log(f"{GREEN}✓ API key validated and saved to MCP config at {mcp_file}{NC}", "✅")
                 else:
                     # Fallback to legacy config if MCP config update fails
                     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
                     CONFIG_FILE.write_text(json.dumps({"OPERATIVE_API_KEY": prompted_key}))
+                    send_log(f"{YELLOW}ℹ Could not save API key to MCP config. Saved to legacy config at {CONFIG_FILE} instead.{NC}", "⚠️")
             except Exception as e:
-                pass
+                send_log(f"{YELLOW}ℹ Could not save API key to MCP config: {e}. Key will not be persisted.{NC}", "⚠️")
             
             OPERATIVE_API_KEY_HOLDER["key"] = prompted_key
             return prompted_key
         else:
+            send_log(f"{RED}✗ Validation failed for entered API key: {msg}{NC}", "❌")
+            # Provide a way to exit if user doesn't want to retry
             retry = input("Invalid API key. Would you like to try again? (y/n): ")
             if retry.lower() != 'y':
+                send_log(f"{RED}✗ API key validation failed. Exiting.{NC}", "❌")
                 raise ValueError("Invalid API key and user chose not to retry.")
 
 @mcp.tool(name=BrowserTools.WEB_EVAL_AGENT)
@@ -300,6 +355,7 @@ async def setup_browser_state(url: str = None, ctx: Context = None) -> list[Text
         return [TextContent(type="text", text=error_message_str)]
     try:
         tool_call_id = str(uuid.uuid4())
+        send_log(f"Generated new tool_call_id for setup_browser_state: {tool_call_id}", "📝")
         return await handle_setup_browser_state(
             {"url": url, "tool_call_id": tool_call_id},
             ctx,
