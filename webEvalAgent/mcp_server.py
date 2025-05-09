@@ -60,32 +60,6 @@ YELLOW = '\033[1;33m'
 NC = '\033[0m' # No Color
 BOLD = '\033[1m'
 
-# ASCII Art for startup logo
-OPERATIVE_LOGO = """                                    $$$$                                    
-                                 $$$    $$$                                 
-                              $$$          $$$                              
-                           $$$     $$$$$$     $$$                           
-                        $$$     $$$  $$  $$$     $$$c                       
-                    c$$$     $$$     $$     $$$     $$$$                    
-                   $$$$      $$$x    $$     $$$      $$$$                   
-                   $$  $$$      >$$$ $$ ;$$$      $$$  $$                   
-                   $$     $$$       $$$$8      $$$     $$                   
-                   $$        $$$            $$$        $$                   
-                   $$   $$$     $$$$     $$$     $$$   $$                   
-                   $$   $  $$$     I$$$$$     $$$  $   $$                   
-                   $$   $     $$$    $$    $$$     $   $$                   
-                   $$   $     $$$$   $$   $$$$     $   $$                   
-                   $$   $  $$$   $   $$   $   $$$  $   $$                   
-                   $$   $$$      $   $$   $      $$$   $$                   
-                   $$     $$$    $   $$   $    $$$     $$                   
-                    $$$      $$$ $   $$   $ $$$      $$$                    
-                       $$$      $$   $$   $$      $$$                       
-                          $$$        $$        $$$                          
-                             $$$     $$     $$$                             
-                                $$$  $$  $$$                                
-                                   $$$$$$                                   
-"""
-
 def ensure_playwright_browsers():
     """Checks and installs Playwright browsers if necessary."""
     try:
@@ -396,10 +370,6 @@ async def setup_browser_state(url: str = None, ctx: Context = None) -> list[Text
         )]
 
 def main():
-    # Print the ASCII logo
-    send_log(OPERATIVE_LOGO, "🚀")
-    send_log(f"\n{BLUE}{BOLD}=== 🚀 Welcome to the Operative Web Eval Agent ===\n{NC}", "🚀")
-    
     try:
         send_log(f"{BOLD}Operative Web Eval Agent starting up...{NC}", "🚀")
         
@@ -413,7 +383,6 @@ def main():
         except NameError: # __file__ not defined (e.g. in interactive interpreter or frozen app)
             # Fallback to current working directory, might not always be correct if script is run from elsewhere
             agent_project_path = Path(".").resolve()
-            send_log(f"{YELLOW}ℹ Could not determine agent script path via __file__, falling back to CWD: {agent_project_path}{NC}", "⚠️")
 
         # Check if we need to configure MCP or if we're running in server mode
         cursor_mcp_file = Path.home() / ".cursor" / "mcp.json"
