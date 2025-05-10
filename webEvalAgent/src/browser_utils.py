@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
 
 import asyncio
-import io
 import json
 import logging
 import uuid
 import warnings
-import base64
 import os
-from contextlib import redirect_stdout, redirect_stderr
-from typing import Dict, Any, Tuple, List, Optional
+from typing import Dict, Any, List, Optional
 from collections import deque
 import pathlib # Added for file reading
 
@@ -17,7 +14,7 @@ import pathlib # Added for file reading
 from .log_server import send_log
 
 # Import Playwright types
-from playwright.async_api import async_playwright, Error as PlaywrightError, Browser as PlaywrightBrowser, BrowserContext as PlaywrightBrowserContext, Page as PlaywrightPage
+from playwright.async_api import async_playwright, Error as PlaywrightError, Page as PlaywrightPage
 
 # Browser-use imports
 from browser_use.agent.service import Agent
@@ -26,7 +23,6 @@ from browser_use.browser.context import BrowserContext # Import BrowserContext
 
 # Langchain/MCP imports
 from langchain_anthropic import ChatAnthropic
-from mcp.server.fastmcp import Context
 from langchain.globals import set_verbose
 
 # Original method will be stored here
@@ -154,7 +150,7 @@ async def _handle_response(response):
         try:
             body_buffer = await response.body()
             body_size = len(body_buffer) if body_buffer else 0
-        except Exception as e: pass
+        except Exception: pass
 
         for req in network_request_storage:
             if req.get("id") == req_id and "response_status" not in req:
@@ -354,7 +350,7 @@ def get_agent_state():
     try:
         from .log_server import socketio
         socketio.emit('agent_state', {'state': state})
-    except Exception as e:
+    except Exception:
         pass
         
     return state
@@ -383,12 +379,12 @@ async def handle_browser_input(event_type: str, details: Dict) -> None:
     
     # Check if we have an active CDP session
     if not active_cdp_session:
-        send_log(f"Input error: No active CDP session", "❌", log_type='status')
+        send_log("Input error: No active CDP session", "❌", log_type='status')
         return
         
     # Check if screencast is running
     if not active_screencast_running:
-        send_log(f"Input error: Screencast not running", "❌", log_type='status')
+        send_log("Input error: Screencast not running", "❌", log_type='status')
         return
 
     if event_type != 'scroll':
@@ -417,9 +413,8 @@ async def handle_browser_input(event_type: str, details: Dict) -> None:
             # send_log(f"Dispatching mousePressed at ({x},{y})", "➡️", log_type='status')
             try:
                 await active_cdp_session.send("Input.dispatchMouseEvent", mouse_pressed_params)
-                send_log(f"mousePressed dispatched successfully", "✅", log_type='status')
+                send_log("mousePressed dispatched successfully", "✅", log_type='status')
             except Exception as press_error:
-                import traceback
                 send_log(f"Input error: Failed to send mousePressed: {press_error}", "❌", log_type='status')
                 return
             
@@ -439,9 +434,8 @@ async def handle_browser_input(event_type: str, details: Dict) -> None:
             # send_log(f"Dispatching mouseReleased at ({x},{y})", "➡️", log_type='status')
             try:
                 await active_cdp_session.send("Input.dispatchMouseEvent", mouse_released_params)
-                send_log(f"mouseReleased dispatched successfully", "✅", log_type='status')
+                send_log("mouseReleased dispatched successfully", "✅", log_type='status')
             except Exception as release_error:
-                import traceback
                 send_log(f"Input error: Failed to send mouseReleased: {release_error}", "❌", log_type='status')
                 return
             
@@ -475,7 +469,6 @@ async def handle_browser_input(event_type: str, details: Dict) -> None:
             try:
                 await active_cdp_session.send("Input.dispatchKeyEvent", key_params)
             except Exception as key_error:
-                import traceback
                 send_log(f"Input error: Failed to send keyDown: {key_error}", "❌", log_type='status')
                 return
             
@@ -496,7 +489,6 @@ async def handle_browser_input(event_type: str, details: Dict) -> None:
             try:
                 await active_cdp_session.send("Input.dispatchKeyEvent", key_params)
             except Exception as key_error:
-                import traceback
                 send_log(f"Input error: Failed to send keyUp: {key_error}", "❌", log_type='status')
                 return
             
@@ -521,7 +513,6 @@ async def handle_browser_input(event_type: str, details: Dict) -> None:
             try:
                 await active_cdp_session.send("Input.dispatchMouseEvent", wheel_params)
             except Exception as wheel_error:
-                import traceback
                 send_log(f"Input error: Failed to send mouseWheel: {wheel_error}", "❌", log_type='status')
                 return
             
@@ -531,7 +522,6 @@ async def handle_browser_input(event_type: str, details: Dict) -> None:
             send_log(f"Unknown input type: {event_type}", "❓", log_type='status')
 
     except Exception as e:
-        import traceback
         send_log(f"Input error: {e}", "❌", log_type='status')
         
         # Check if the session is closed
@@ -541,7 +531,7 @@ async def handle_browser_input(event_type: str, details: Dict) -> None:
             if active_cdp_session:
                 try: 
                     await active_cdp_session.detach()
-                except Exception as detach_error: 
+                except Exception: 
                     pass
                 active_cdp_session = None
 
@@ -685,21 +675,21 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
                     # Send to frontend via SocketIO
                     try:
                         from .log_server import send_browser_view
-                    except ImportError as import_error:
+                    except ImportError:
                         return
                     
                     try:
                         await send_browser_view(image_data_url)
-                    except Exception as send_error:
-                        import traceback
+                    except Exception:
+                        pass
                     
                     # Acknowledge the frame
                     try:
                         await cdp_session.send("Page.screencastFrameAck", {"sessionId": params['sessionId']})
-                    except Exception as ack_error:
+                    except Exception:
                         pass
-                except Exception as frame_error:
-                    import traceback
+                except Exception:
+                    pass
             
             # Define async wrapper function for screencast frame event
             cdp_session.on("Page.screencastFrame", handle_screencast_frame)
@@ -728,7 +718,7 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
                 
                 from .log_server import send_browser_view
                 await send_browser_view(direct_image_url)
-            except Exception as screenshot_error:
+            except Exception:
                 import traceback
             
             send_log("CDP screencast started for browser-use browser.", "📹", log_type='status')
@@ -794,7 +784,7 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
             # Check for persisted browser state
             persisted_state = _get_persisted_state()
             if persisted_state:
-                send_log(f"Loading persisted browser state in new context", "💾", log_type='status')
+                send_log("Loading persisted browser state in new context", "💾", log_type='status')
             
             # Call the original method but with storage_state if available
             raw_playwright_context = await original_create_context(self, browser_pw)
@@ -810,7 +800,7 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
                         await raw_playwright_context.add_cookies(state_data['cookies'])
                     
                     # Origins with storage set is already handled by Playwright internally
-                    send_log(f"Applied persisted browser state to context", "💾", log_type='status')
+                    send_log("Applied persisted browser state to context", "💾", log_type='status')
                 except Exception as e:
                     send_log(f"Failed to apply persisted state to context: {e}", "⚠️", log_type='status')
 
@@ -851,7 +841,7 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
         from .env_utils import get_backend_url
         
         llm = ChatAnthropic(model="claude-3-5-sonnet-20240620",
-            base_url=get_backend_url(f"v1beta/models/claude-3-5-sonnet-20240620"),
+            base_url=get_backend_url("v1beta/models/claude-3-5-sonnet-20240620"),
             extra_headers={
                 "x-operative-api-key": api_key,
                 "x-operative-tool-call-id": tool_call_id
@@ -918,7 +908,7 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
 
         send_log(f"Agent starting task: {task}", "🏃", log_type='agent') # Type: agent
         agent_result = await agent.run()
-        send_log(f"Agent run finished.", "🏁", log_type='agent') # Type: agent
+        send_log("Agent run finished.", "🏁", log_type='agent') # Type: agent
 
         # --- Prepare Combined Results ---
         # Convert AgentHistoryList to a serializable format (just stringify)

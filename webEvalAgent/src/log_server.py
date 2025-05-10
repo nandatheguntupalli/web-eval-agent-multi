@@ -235,7 +235,7 @@ def handle_browser_input_event(data):
         loop = get_browser_task_loop()
         
         if loop is None:
-            send_log(f"Input error: Browser task loop not available", "❌", log_type='status')
+            send_log("Input error: Browser task loop not available", "❌", log_type='status')
             return
         
         # send_log(f"Scheduling {event_type} input handler in browser task loop", "🔄", log_type='status')
