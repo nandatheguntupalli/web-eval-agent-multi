@@ -128,8 +128,13 @@ def send_log(message: str, emoji: str = "➡️", log_type: str = 'agent'):
         pass
 
 # --- Browser View Update Function ---
-async def send_browser_view(image_data_url: str):
-    """Sends the browser view image data URL to all connected clients."""
+async def send_browser_view(image_data_url: str, instance_id: str = None):
+    """Sends the browser view image data URL to all connected clients.
+    
+    Args:
+        image_data_url: The data URL of the browser view image
+        instance_id: Optional instance ID for parallel browser instances
+    """
     # This function is async because it might be called from the asyncio loop
     # in browser_manager. However, socketio.emit needs to be called carefully
     # when interacting between asyncio and other threads (like Flask's).
@@ -149,7 +154,11 @@ async def send_browser_view(image_data_url: str):
         pass
         
     try:
-        socketio.emit('browser_update', {'data': image_data_url})
+        # Include instance_id in the emitted data to support parallel instances
+        socketio.emit('browser_update', {
+            'data': image_data_url,
+            'instance_id': instance_id
+        })
     except Exception:
         pass
 
