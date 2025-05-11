@@ -8,6 +8,6 @@ rm -rf ~/.operative/config.json
 npx playwright uninstall --all
 rm ~/.cursor/mcp.json
 
-# uvx --from git+https://github.com/nandatheguntupalli/web-eval-agent.git webEvalAgent
+# uvx --from git+https://github.com/nandatheguntupalli/web-eval-agent-multi.git webEvalAgent
 
 #  OPERATIVE_API_KEY=<KEY> uv run webEvalAgent/mcp_server.py
