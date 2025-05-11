@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import httpx
+import asyncio
 from .env_utils import get_backend_url
 
 async def validate_api_key(api_key: str) -> bool:
@@ -23,5 +24,5 @@ async def validate_api_key(api_key: str) -> bool:
             )
             result = response.json()
             return result.get("valid", False)
-    except Exception:
+    except Exception as e:
         return False

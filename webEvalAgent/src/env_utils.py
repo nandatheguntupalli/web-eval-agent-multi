@@ -3,6 +3,7 @@
 import os
 import dotenv
 import pathlib
+from typing import Optional
 
 # Load environment variables from .env file if it exists
 env_path = pathlib.Path('.env')

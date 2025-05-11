@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 
+import io
 import json
 import traceback
 import uuid
+import re
 import os
-from typing import Dict, Any
+from contextlib import redirect_stdout, redirect_stderr
+from typing import Dict, List, Any
 
 from mcp.server.fastmcp import Context
 from mcp.types import TextContent, ImageContent # Added ImageContent import
@@ -12,7 +15,7 @@ from mcp.types import TextContent, ImageContent # Added ImageContent import
 # Import the manager directly
 from webEvalAgent.src.browser_manager import PlaywrightBrowserManager
 # Only import run_browser_task from browser_utils
-from webEvalAgent.src.browser_utils import run_browser_task, console_log_storage, network_request_storage
+from webEvalAgent.src.browser_utils import run_browser_task, console_log_storage, network_request_storage, screenshot_storage
 # Import your prompt function
 from webEvalAgent.src.prompts import get_web_evaluation_prompt
 # Import log server functions directly
@@ -61,7 +64,7 @@ async def handle_web_evaluation(arguments: Dict[str, Any], ctx: Context, api_key
         await asyncio.sleep(1)
         # Open the dashboard in a new tab
         open_log_dashboard()
-    except Exception:
+    except Exception as log_server_error:
         pass
     
     # Validate required arguments
@@ -112,7 +115,7 @@ async def handle_web_evaluation(arguments: Dict[str, Any], ctx: Context, api_key
         
     # Get the evaluation task prompt
     evaluation_task = get_web_evaluation_prompt(url, task)
-    send_log("📝 Generated evaluation prompt.", "📝")
+    send_log(f"📝 Generated evaluation prompt.", "📝")
     
     # Run the browser task
     agent_result_data = None # Changed to agent_result_data
@@ -342,7 +345,7 @@ def format_agent_result(result_str: str, url: str, task: str, console_logs=None,
                     step_timestamp = step_base_time + (i * step_interval)
                     
                     # Check if there's an error
-                    if "error=" in action and "error=None" not in action:
+                    if "error=" in action and not "error=None" in action:
                         error_part = action.split("error=")[1].split(",")[0]
                         error = error_part.strip("'\"")
                         if error != "None":
@@ -455,7 +458,7 @@ def format_agent_result(result_str: str, url: str, task: str, console_logs=None,
         
         # Show console errors first (if any)
         if console_errors:
-            formatted += "\n🔴 Console Errors:"
+            formatted += f"\n🔴 Console Errors:"
             formatted += format_error_list(
                 console_errors,
                 lambda i, error: f"  {i+1}. {error}\n"
@@ -477,7 +480,7 @@ def format_agent_result(result_str: str, url: str, task: str, console_logs=None,
         
         # Show failed network requests next (if any)
         if failed_requests:
-            formatted += "\n❌ Failed Network Requests:"
+            formatted += f"\n❌ Failed Network Requests:"
             formatted += format_error_list(
                 failed_requests,
                 lambda i, req: f"  {i+1}. {req['method']} {req['url']} - Status: {req['status']}\n"
@@ -488,7 +491,7 @@ def format_agent_result(result_str: str, url: str, task: str, console_logs=None,
         if console_logs:
             all_console_logs = list(console_logs)  # Convert deque to list for easier handling
         
-        formatted += "\n🖥️ All Console Logs:"
+        formatted += f"\n🖥️ All Console Logs:"
         formatted += format_error_list(
             all_console_logs,
             lambda i, log: f"  {i+1}. [{log.get('type', 'log')}] {log.get('text', 'Unknown message')}\n"
@@ -499,7 +502,7 @@ def format_agent_result(result_str: str, url: str, task: str, console_logs=None,
         if network_requests:
             all_network_requests = list(network_requests)  # Convert deque to list
         
-        formatted += "\n🌐 All Network Requests:"
+        formatted += f"\n🌐 All Network Requests:"
         formatted += format_error_list(
             all_network_requests,
             lambda i, req: f"  {i+1}. {req.get('method', 'GET')} {req.get('url', 'Unknown URL')} - Status: {req.get('response_status', 'N/A')}\n"
@@ -545,7 +548,7 @@ def format_agent_result(result_str: str, url: str, task: str, console_logs=None,
         all_events.sort(key=lambda x: x.get('timestamp', 0))
         
         # Format the timeline
-        formatted += "\n\n⏱️ Chronological Timeline of All Events:\n"
+        formatted += f"\n\n⏱️ Chronological Timeline of All Events:\n"
         
         timeline_text = ""
         for event in all_events:
@@ -642,7 +645,7 @@ async def handle_setup_browser_state(arguments: Dict[str, Any], ctx: Context, ap
     os.makedirs(state_dir, exist_ok=True)
     state_file = os.path.join(state_dir, "state.json")
     
-    send_log("🚀 Starting interactive login session", "🚀")
+    send_log(f"🚀 Starting interactive login session", "🚀")
     send_log(f"Browser state will be saved to {state_file}", "💾")
     
     # Create a user data directory if it doesn't exist

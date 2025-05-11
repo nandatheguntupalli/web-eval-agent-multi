@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
 import asyncio
+import base64
 import socket
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 # Import log server functions
 # We will add send_browser_view later
@@ -299,12 +300,12 @@ class PlaywrightBrowserManager:
         """Handles input events received from the frontend via log_server."""
         # Check if we have an active CDP session
         if not self.cdp_session:
-            send_log("Input error: No active CDP session", "❌", log_type='status')
+            send_log(f"Input error: No active CDP session", "❌", log_type='status')
             return
             
         # Check if screencast is running
         if not self.screencast_task_running:
-            send_log("Input error: Screencast not running", "❌", log_type='status')
+            send_log(f"Input error: Screencast not running", "❌", log_type='status')
             return
 
         if event_type != 'scroll':

@@ -12,6 +12,9 @@ from pathlib import Path
 import requests
 
 from webEvalAgent.src.utils import stop_log_server
+import json
+import sys
+from typing import Any, Dict, List, Union
 from webEvalAgent.src.log_server import send_log
 
 # Set the API key to a fake key to avoid error in backend
@@ -24,11 +27,12 @@ from mcp.types import TextContent
 
 # Import our modules
 from webEvalAgent.src.browser_manager import PlaywrightBrowserManager
-# from webEvalAgent.src.browser_utils import cleanup_resources # Removed import
 from webEvalAgent.src.api_utils import validate_api_key
 from webEvalAgent.src.tool_handlers import handle_web_evaluation, handle_setup_browser_state
 
 # MCP server modules
+from webEvalAgent.src.browser_utils import handle_browser_input
+from webEvalAgent.src.log_server import start_log_server, open_log_dashboard
 
 # Stop any existing log server to avoid conflicts
 # This doesn't start a new server, just ensures none is running
