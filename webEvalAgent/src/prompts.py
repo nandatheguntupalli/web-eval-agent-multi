@@ -20,6 +20,7 @@ If a login page appears, first try clicking "Login" — saved credentials may wo
 If login fields appear and no credentials are provided, do not guess. Stop and report that login is required. Suggest the user run setup_browser_state to log in and retry.
 
 If no errors block progress, proceed and attempt the task. Try a couple times if needed before giving up — unless blocked by missing login access.
+Make sure to click through the application from the base url, don't jump to other pages without naturally arriving there.
 
 Report any UX issues (e.g., incorrect content, broken flows), or confirm everything worked smoothly.
 Take note of any opportunities for improvement in the UI/UX, test and think about the application like a real user would.

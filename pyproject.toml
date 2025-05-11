@@ -17,6 +17,7 @@ dependencies = [
     "flask>=3.1.0",
     "flask-socketio>=5.5.1",
     "requests>=2.20.0",
+    "ruff>=0.11.9",
 ]
 
 [project.scripts]

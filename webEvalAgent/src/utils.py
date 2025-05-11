@@ -15,7 +15,7 @@ def stop_log_server():
                              subprocess.check_output(["netstat", "-ano", "|", "findstr", ":5009"]).decode().strip().split()[-1]], 
                              stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
          else:  # Unix-like systems (Linux, macOS)
-             subprocess.run(f"kill $(lsof -ti tcp:5009)", shell=True, 
+             subprocess.run("kill $(lsof -ti tcp:5009)", shell=True, 
                              stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
      except Exception:
          pass  # Ignore errors if no process is running on that port
