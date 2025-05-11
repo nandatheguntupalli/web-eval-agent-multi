@@ -586,8 +586,18 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
     global agent_instance, console_log_storage, network_request_storage, screenshot_storage, original_create_context, _original_bring_to_front
     global active_cdp_session, active_screencast_running
     
-    # Generate a short instance ID for logging
-    instance_id = tool_call_id[-6:] if tool_call_id else str(uuid.uuid4())[-6:]
+    # Generate a more distinctive instance ID for parallel execution
+    if tool_call_id and '_' in tool_call_id:
+        # Extract the instance number if it's a parallel instance
+        base_id, instance_num = tool_call_id.rsplit('_', 1)
+        try:
+            instance_id = f"Instance-{int(instance_num)+1}"  # Make it 1-based instead of 0-based
+        except ValueError:
+            instance_id = f"Instance-{tool_call_id[-4:]}"
+    else:
+        instance_id = f"Instance-{str(uuid.uuid4())[-4:]}"
+    
+    send_log(f"Starting browser task for {instance_id}", "🚀", log_type='status')
     
     # Clear screenshot storage for this run
     screenshot_storage = []  # Create a new list rather than clearing shared one
@@ -625,16 +635,19 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
         # Launch with CDP enabled
         playwright_browser = await playwright.chromium.launch(
             headless=headless,  # Use the provided headless parameter
-            args=["--remote-debugging-port=0"]  # Use dynamic port to avoid conflicts in parallel runs
+            args=[
+                "--remote-debugging-port=0",  # Use dynamic port to avoid conflicts in parallel runs
+                f"--window-name=Browser {instance_id}"  # Set window name to help distinguish instances
+            ]
         )
         
         # Get the CDP URL from the browser
-        send_log(f"[Instance {instance_id}] Playwright initialized for task with CDP (headless={headless}).", "🎭", log_type='status')
+        send_log(f"[{instance_id}] Playwright initialized for task with CDP (headless={headless}).", "🎭", log_type='status')
 
         # --- Check for persisted browser state ---
         persisted_state = _get_persisted_state()
         if persisted_state:
-            send_log(f"[Instance {instance_id}] Loading persisted browser state from {persisted_state}", "💾", log_type='status')
+            send_log(f"[{instance_id}] Loading persisted browser state from {persisted_state}", "💾", log_type='status')
         
         # --- Create browser-use Browser ---
         # For parallel instances, we need to determine CDP port dynamically
@@ -644,16 +657,16 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
             browser_debug_info = playwright_browser.browser_type._connect_to_debug_server()
             if browser_debug_info:
                 cdp_url = browser_debug_info.get('wsEndpoint')
-                send_log(f"[Instance {instance_id}] Using CDP URL: {cdp_url}", "🔌", log_type='status')
+                send_log(f"[{instance_id}] Using CDP URL: {cdp_url}", "🔌", log_type='status')
         except (AttributeError, TypeError) as e:
-            send_log(f"[Instance {instance_id}] Warning: Could not determine CDP URL: {e}", "⚠️", log_type='status')
+            send_log(f"[{instance_id}] Warning: Could not determine CDP URL: {e}", "⚠️", log_type='status')
         
         # Create browser with CDP URL if available
         browser_config = BrowserConfig(disable_security=True, headless=headless, cdp_url=cdp_url)
         agent_browser = Browser(config=browser_config)
         agent_browser.playwright = playwright
         agent_browser.playwright_browser = playwright_browser
-        send_log(f"[Instance {instance_id}] Linked Playwright to agent browser with CDP.", "🔗", log_type='status')
+        send_log(f"[{instance_id}] Linked Playwright to agent browser with CDP.", "🔗", log_type='status')
         
         # --- Set up CDP screencasting ---
         # Detailed logging and error handling for each step
@@ -670,7 +683,7 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
                 # For parallel instances, we store the CDP session in a local variable only
                 local_cdp_session = cdp_session
             except Exception as cdp_error:
-                send_log(f"[Instance {instance_id}] Failed to create CDP session: {cdp_error}", "❌", log_type='status')
+                send_log(f"[{instance_id}] Failed to create CDP session: {cdp_error}", "❌", log_type='status')
                 import traceback
                 raise  # Re-raise to be caught by outer try/except
             
@@ -719,7 +732,7 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
                         "maxHeight": 1080
                     })
             except Exception as start_error:
-                send_log(f"[Instance {instance_id}] Failed to start screencast: {start_error}", "❌", log_type='status')
+                send_log(f"[{instance_id}] Failed to start screencast: {start_error}", "❌", log_type='status')
                 import traceback
                 raise  # Re-raise to be caught by outer try/except
 
@@ -737,14 +750,14 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
             except Exception:
                 import traceback
             
-            send_log(f"[Instance {instance_id}] CDP screencast started for browser-use browser.", "📹", log_type='status')
+            send_log(f"[{instance_id}] CDP screencast started for browser-use browser.", "📹", log_type='status')
             
             # Define the periodic screenshot capture function
             async def capture_screenshots(page, interval=1/30):
                 """Capture screenshots at the specified interval in seconds (30 FPS)."""
                 # Use a local flag for this instance
                 local_screencast_running = True
-                send_log(f"[Instance {instance_id}] Starting periodic screenshot capture at 30 FPS", "🎬", log_type='status')
+                send_log(f"[{instance_id}] Starting periodic screenshot capture at 30 FPS", "🎬", log_type='status')
                 try:
                     while local_screencast_running:
                         try:
@@ -772,9 +785,9 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
                         # Wait for the next interval
                         await asyncio.sleep(interval)
                 except asyncio.CancelledError:
-                    send_log(f"[Instance {instance_id}] Periodic screenshot capture stopped", "🛑", log_type='status')
+                    send_log(f"[{instance_id}] Periodic screenshot capture stopped", "🛑", log_type='status')
                 except Exception as e:
-                    send_log(f"[Instance {instance_id}] Screenshot capture error: {e}", "❌", log_type='status')
+                    send_log(f"[{instance_id}] Screenshot capture error: {e}", "❌", log_type='status')
             
             # Start the screenshot capture task with a local variable
             local_screencast_running = True
@@ -783,7 +796,7 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
                 local_screenshot_task = asyncio.create_task(capture_screenshots(first_page))
             
         except Exception as e:
-            send_log(f"[Instance {instance_id}] Failed to start CDP screencast: {e}", "❌", log_type='status')
+            send_log(f"[{instance_id}] Failed to start CDP screencast: {e}", "❌", log_type='status')
             import traceback
             
         # Create a local function for handling console messages with instance ID
@@ -800,11 +813,11 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
                 
                 # Check if message has a failure attribute
                 if hasattr(message, 'failure') and message.failure:
-                    send_log(f"[Instance {instance_id}] CONSOLE ERROR [{log_entry['type']}]: {log_entry['text']} - {message.failure}", "❌", log_type='console')
+                    send_log(f"[{instance_id}] CONSOLE ERROR [{log_entry['type']}]: {log_entry['text']} - {message.failure}", "❌", log_type='console')
                 else:
-                    send_log(f"[Instance {instance_id}] CONSOLE [{log_entry['type']}]: {log_entry['text']}", "🖥️", log_type='console')
+                    send_log(f"[{instance_id}] CONSOLE [{log_entry['type']}]: {log_entry['text']}", "🖥️", log_type='console')
             except Exception as e:
-                send_log(f"[Instance {instance_id}] Error handling console message: {e}", "❌", log_type='status')
+                send_log(f"[{instance_id}] Error handling console message: {e}", "❌", log_type='status')
         
         # Create a non-async wrapper for this instance
         def handle_instance_console_message(message):
@@ -826,7 +839,7 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
             # Check for persisted browser state
             persisted_state = _get_persisted_state()
             if persisted_state:
-                send_log(f"[Instance {instance_id}] Loading persisted browser state in new context", "💾", log_type='status')
+                send_log(f"[{instance_id}] Loading persisted browser state in new context", "��", log_type='status')
             
             # Call the original method but with storage_state if available
             raw_playwright_context = await original_create_context(self, browser_pw)
@@ -842,9 +855,9 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
                         await raw_playwright_context.add_cookies(state_data['cookies'])
                     
                     # Origins with storage set is already handled by Playwright internally
-                    send_log(f"[Instance {instance_id}] Applied persisted browser state to context", "💾", log_type='status')
+                    send_log(f"[{instance_id}] Applied persisted browser state to context", "💾", log_type='status')
                 except Exception as e:
-                    send_log(f"[Instance {instance_id}] Failed to apply persisted state to context: {e}", "⚠️", log_type='status')
+                    send_log(f"[{instance_id}] Failed to apply persisted state to context: {e}", "⚠️", log_type='status')
 
             if raw_playwright_context:
                 # Use the non-async wrapper functions for event listeners
@@ -866,9 +879,9 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
                 # Set up agent controls for new pages using non-async wrapper
                 raw_playwright_context.on("page", on_page)
                 
-                send_log(f"[Instance {instance_id}] Log listeners and agent controls attached.", "👂", log_type='status')
+                send_log(f"[{instance_id}] Log listeners and agent controls attached.", "👂", log_type='status')
             else:
-                 send_log(f"[Instance {instance_id}] Original _create_context did not return a context.", "⚠️", log_type='status')
+                 send_log(f"[{instance_id}] Original _create_context did not return a context.", "⚠️", log_type='status')
 
             return raw_playwright_context
 
@@ -878,7 +891,7 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
         # --- Ensure Tool Call ID ---
         if tool_call_id is None:
             tool_call_id = str(uuid.uuid4())
-            send_log(f"[Instance {instance_id}] Generated tool_call_id: {tool_call_id}", "🆔", log_type='status')
+            send_log(f"[{instance_id}] Generated tool_call_id: {tool_call_id}", "🆔", log_type='status')
 
         # --- LLM Setup ---
         from .env_utils import get_backend_url
@@ -889,7 +902,7 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
                 "x-operative-api-key": api_key,
                 "x-operative-tool-call-id": tool_call_id
             })
-        send_log(f"[Instance {instance_id}] LLM ({llm.model}) configured.", "🤖", log_type='status')
+        send_log(f"[{instance_id}] LLM ({llm.model}) configured.", "🤖", log_type='status')
 
         # --- Agent Callback ---
         async def state_callback(browser_state, agent_output, step_number):
@@ -898,8 +911,8 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
             local_screenshot_storage = screenshot_storage # Local list for screenshots
 
             # Send agent output with type 'agent'
-            send_log(f"[Instance {instance_id}] Step {step_number}", "📍", log_type='agent')
-            send_log(f"[Instance {instance_id}] URL: {browser_state.url}", "🔗", log_type='agent')
+            send_log(f"[{instance_id}] Step {step_number}", "📍", log_type='agent')
+            send_log(f"[{instance_id}] URL: {browser_state.url}", "🔗", log_type='agent')
 
             # Capture screenshot at each step
             try:
@@ -913,7 +926,7 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
                         screenshot_base64 = base64.b64encode(screenshot_bytes).decode('utf-8')
                         
                         # Log screenshot size for debugging
-                        send_log(f"[Instance {instance_id}] Screenshot captured: {len(screenshot_bytes)} bytes, {len(screenshot_base64)} base64 chars", "📊", log_type='status')
+                        send_log(f"[{instance_id}] Screenshot captured: {len(screenshot_bytes)} bytes, {len(screenshot_base64)} base64 chars", "📊", log_type='status')
                         
                         # Store screenshot with metadata
                         local_screenshot_storage.append({
@@ -924,24 +937,24 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
                             'instance_id': instance_id
                         })
                         
-                        send_log(f"[Instance {instance_id}] Screenshot stored in storage (total: {len(local_screenshot_storage)})", "📸", log_type='status')
+                        send_log(f"[{instance_id}] Screenshot stored in storage (total: {len(local_screenshot_storage)})", "📸", log_type='status')
                         
                         # Re-inject the overlay
-                        send_log(f"[Instance {instance_id}] Re-injecting overlay after step {step_number} into page {current_page.url}", "🔄", log_type='status')
+                        send_log(f"[{instance_id}] Re-injecting overlay after step {step_number} into page {current_page.url}", "🔄", log_type='status')
                     else:
-                        send_log(f"[Instance {instance_id}] Could not get current page from agent context for step {step_number}", "⚠️", log_type='status')
+                        send_log(f"[{instance_id}] Could not get current page from agent context for step {step_number}", "⚠️", log_type='status')
                 else:
-                     send_log(f"[Instance {instance_id}] Agent instance or browser context not available for step {step_number}", "⚠️", log_type='status')
+                     send_log(f"[{instance_id}] Agent instance or browser context not available for step {step_number}", "⚠️", log_type='status')
 
             except Exception as e:
                 # Add traceback for debugging other potential errors
                 import traceback
                 tb_str = traceback.format_exc()
-                send_log(f"[Instance {instance_id}] Failed to capture screenshot or re-inject overlay after step: {e}\n{tb_str}", "⚠️", log_type='status')
+                send_log(f"[{instance_id}] Failed to capture screenshot or re-inject overlay after step: {e}\n{tb_str}", "⚠️", log_type='status')
 
             # Ensure agent_output is a string before logging
             output_str = str(agent_output)
-            send_log(f"[Instance {instance_id}] Agent Output: {output_str}", "💬", log_type='agent')
+            send_log(f"[{instance_id}] Agent Output: {output_str}", "💬", log_type='agent')
 
         # --- Initialize and Run Agent ---
         agent = Agent(
@@ -955,21 +968,21 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
         # Also store in global for callback reference
         agent_instance = agent
 
-        send_log(f"[Instance {instance_id}] Agent starting task: {task}", "🏃", log_type='agent')
+        send_log(f"[{instance_id}] Agent starting task: {task}", "🏃", log_type='agent')
         agent_result = await agent.run()
-        send_log(f"[Instance {instance_id}] Agent run finished.", "🏁", log_type='agent')
+        send_log(f"[{instance_id}] Agent run finished.", "🏁", log_type='agent')
 
         # --- Prepare Combined Results ---
         # Convert AgentHistoryList to a serializable format (just stringify)
         serialized_result = str(agent_result)
 
         # Log information about screenshots before returning
-        send_log(f"[Instance {instance_id}] Returning {len(screenshot_storage)} screenshots from run_browser_task", "📸", log_type='status')
+        send_log(f"[{instance_id}] Returning {len(screenshot_storage)} screenshots from run_browser_task", "📸", log_type='status')
         if screenshot_storage:
             for i, screenshot in enumerate(screenshot_storage):
-                send_log(f"[Instance {instance_id}] Screenshot {i+1}: Step {screenshot['step']}, {len(screenshot['screenshot'])} base64 chars", "🔢", log_type='status')
+                send_log(f"[{instance_id}] Screenshot {i+1}: Step {screenshot['step']}, {len(screenshot['screenshot'])} base64 chars", "🔢", log_type='status')
         else:
-            send_log(f"[Instance {instance_id}] No screenshots captured during task execution!", "⚠️", log_type='status')
+            send_log(f"[{instance_id}] No screenshots captured during task execution!", "⚠️", log_type='status')
 
         # Return the agent result and screenshots
         return {
@@ -979,7 +992,7 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
         }
 
     except Exception as e:
-        error_message = f"[Instance {instance_id}] Error in run_browser_task: {e}\n{traceback.format_exc()}"
+        error_message = f"[{instance_id}] Error in run_browser_task: {e}\n{traceback.format_exc()}"
         send_log(error_message, "❌", log_type='status')
         return {
             "result": error_message,
@@ -995,7 +1008,7 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
                 await local_screenshot_task
             except asyncio.CancelledError:
                 pass
-            send_log(f"[Instance {instance_id}] Periodic screenshot task canceled", "🧹", log_type='status')
+            send_log(f"[{instance_id}] Periodic screenshot task canceled", "🧹", log_type='status')
         
         # Clear any local screencast running flag
         if locals().get('local_screencast_running'):
@@ -1016,19 +1029,19 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
         # Ensure patch is restored
         if local_original_create_context:
             BrowserContext._create_context = local_original_create_context
-            send_log(f"[Instance {instance_id}] Original BrowserContext restored.", "🔧", log_type='status')
+            send_log(f"[{instance_id}] Original BrowserContext restored.", "🔧", log_type='status')
 
         # Close the browser created specifically for this task
         if agent_browser:
             await agent_browser.close()
             agent_browser = None
-            send_log(f"[Instance {instance_id}] Agent browser resources cleaned up.", "🧹", log_type='status')
+            send_log(f"[{instance_id}] Agent browser resources cleaned up.", "🧹", log_type='status')
         
         # Close the playwright instance started for this task
         if playwright:
             await playwright.stop()
             playwright = None
-            send_log(f"[Instance {instance_id}] Playwright instance for task stopped.", "🧹", log_type='status')
+            send_log(f"[{instance_id}] Playwright instance for task stopped.", "🧹", log_type='status')
 
         # Clear the global instance if it was set to this instance
         if agent_instance == local_agent_instance:
@@ -1037,4 +1050,4 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
         # Clear the browser task loop reference
         browser_task_loop = None
         
-        send_log(f"[Instance {instance_id}] Cleanup complete", "✅", log_type='status')
+        send_log(f"[{instance_id}] Cleanup complete", "✅", log_type='status')

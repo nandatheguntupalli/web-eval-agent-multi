@@ -239,7 +239,7 @@ def get_and_validate_api_key():
                 raise ValueError("Invalid API key and user chose not to retry.")
 
 @mcp.tool(name=BrowserTools.WEB_EVAL_AGENT)
-async def web_eval_agent(url: str, task: str, ctx: Context, headless_browser: bool = False, parallel_instances: int = 1) -> list[TextContent]:
+async def web_eval_agent(url: str, task: str, ctx: Context, headless_browser: bool = False, parallel_instances: int = 2) -> list[TextContent]:
     """Evaluate the user experience / interface of a web application.
 
     This tool allows the AI to assess the quality of user experience and interface design
@@ -256,8 +256,9 @@ async def web_eval_agent(url: str, task: str, ctx: Context, headless_browser: bo
              Be as detailed as possible in your task description. It could be anywhere from 2 sentences to 2 paragraphs.
         headless_browser: Optional. Whether to hide the browser window popup during evaluation.
             If headless_browser is True, only the operative control center browser will show, and no popup browser will be shown.
-        parallel_instances: Optional. Number of parallel browser instances to run for faster testing (1-10).
-            Higher values will use more system resources but may complete testing faster.
+        parallel_instances: Optional. Number of parallel browser instances to run for faster testing (2-10).
+            Higher values will use more system resources but will complete testing faster by running multiple
+            browser instances simultaneously. Default is 2 for better reliability.
 
     Returns:
         list[list[TextContent, ImageContent]]: A detailed evaluation of the web application's UX/UI, including
@@ -280,14 +281,16 @@ async def web_eval_agent(url: str, task: str, ctx: Context, headless_browser: bo
         # Validate parallel_instances
         try:
             parallel_instances = int(parallel_instances)
-            if parallel_instances < 1:
-                parallel_instances = 1
+            if parallel_instances < 2:  # Minimum of 2 instances for better reliability
+                parallel_instances = 2
+                send_log(f"Using minimum of 2 parallel instances for better reliability", "ℹ️")
             elif parallel_instances > 10:  # Set a reasonable maximum
                 parallel_instances = 10
+                send_log(f"Limiting to 10 parallel instances maximum", "ℹ️")
             send_log(f"Web evaluation will use {parallel_instances} parallel browser instance(s)", "🔄")
         except (ValueError, TypeError):
-            parallel_instances = 1
-            send_log(f"Invalid parallel_instances value. Defaulting to 1 instance.", "⚠️")
+            parallel_instances = 2
+            send_log(f"Invalid parallel_instances value. Defaulting to 2 instances.", "⚠️")
             
         return await handle_web_evaluation(
             {

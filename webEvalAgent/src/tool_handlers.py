@@ -131,99 +131,72 @@ async def handle_web_evaluation(arguments: Dict[str, Any], ctx: Context, api_key
     agent_result_data = None
     screenshots = []
     
+    # ALWAYS use parallel mode with at least 2 instances for better reliability
     if parallel_instances <= 1:
-        # Original single-instance behavior
-        try:
-            # run_browser_task now returns a dictionary with result and screenshots
-            agent_result_data = await run_browser_task(
-                evaluation_task,
-                headless=headless,
-                tool_call_id=tool_call_id,
-                api_key=api_key
-            )
-            
-            # Extract the final result string
-            agent_final_result = agent_result_data.get("result", "No result provided")
-            screenshots = agent_result_data.get("screenshots", [])
-
-            # Log detailed screenshot information
-            send_log(f"Received {len(screenshots)} screenshots from run_browser_task", "📸")
-            for i, screenshot in enumerate(screenshots):
-                if 'screenshot' in screenshot and screenshot['screenshot']:
-                    b64_length = len(screenshot['screenshot'])
-                    send_log(f"Processing screenshot {i+1}: Step {screenshot.get('step', 'unknown')}, {b64_length} base64 chars", "🔢")
-                else:
-                    send_log(f"Screenshot {i+1} missing 'screenshot' data! Keys: {list(screenshot.keys())}", "⚠️")
-
-            # Log the number of screenshots captured
-            send_log(f"📸 Captured {len(screenshots)} screenshots during evaluation", "📸")
-
-        except Exception as browser_task_error:
-            error_msg = f"Error during browser task execution: {browser_task_error}\n{traceback.format_exc()}"
-            send_log(error_msg, "❌")
-            agent_final_result = f"Error: {browser_task_error}" # Provide error as result
-            screenshots = [] # Ensure screenshots is defined even on error
-    else:
-        # Run multiple browser tasks in parallel
-        send_log(f"Starting {parallel_instances} parallel browser evaluations", "🚀")
-        
-        # Create tasks for each parallel instance
-        parallel_tasks = []
-        for i in range(parallel_instances):
-            instance_id = f"{tool_call_id}_{i}"
-            send_log(f"Creating task for parallel instance {i+1} with ID {instance_id}", "🔄")
-            
-            # Each instance gets its own task
-            parallel_tasks.append(run_browser_task(
-                evaluation_task,
-                headless=headless,
-                tool_call_id=instance_id,
-                api_key=api_key
-            ))
-        
-        # Wait for all tasks to complete
-        combined_results = []
-        combined_screenshots = []
-        
-        try:
-            # gather() runs all the tasks concurrently and returns their results
-            parallel_results = await asyncio.gather(*parallel_tasks, return_exceptions=True)
-            
-            send_log(f"All {len(parallel_results)} parallel evaluations completed", "✅")
-            
-            # Process the results from each parallel task
-            for i, result in enumerate(parallel_results):
-                if isinstance(result, Exception):
-                    # Handle exception cases
-                    error_msg = f"Error in parallel instance {i+1}: {result}\n{traceback.format_exc()}"
-                    send_log(error_msg, "❌")
-                    combined_results.append(f"Instance {i+1} Error: {result}")
-                else:
-                    # Handle successful results
-                    instance_result = result.get("result", f"No result from instance {i+1}")
-                    instance_screenshots = result.get("screenshots", [])
-                    
-                    # Add instance number to screenshots for identification
-                    for screenshot in instance_screenshots:
-                        screenshot["instance"] = i+1
-                    
-                    combined_results.append(f"Instance {i+1} Result: {instance_result}")
-                    combined_screenshots.extend(instance_screenshots)
-                    
-                    send_log(f"Instance {i+1}: Received {len(instance_screenshots)} screenshots", "📸")
-            
-            # Create a combined result
-            agent_final_result = "\n\n".join(combined_results)
-            screenshots = combined_screenshots
-            
-            send_log(f"Combined {len(screenshots)} screenshots from all parallel instances", "📸")
-            
-        except Exception as parallel_error:
-            error_msg = f"Error coordinating parallel browser tasks: {parallel_error}\n{traceback.format_exc()}"
-            send_log(error_msg, "❌")
-            agent_final_result = f"Error in parallel execution: {parallel_error}"
-            screenshots = []
+        # Force to at least 2 instances even if user requested 1
+        parallel_instances = 2
+        send_log("Upgrading to 2 parallel instances for better reliability", "🔄")
     
+    # Create parallel browser tasks
+    send_log(f"Starting {parallel_instances} parallel browser evaluations", "🚀")
+    
+    # Create tasks for each parallel instance
+    parallel_tasks = []
+    for i in range(parallel_instances):
+        instance_id = f"{tool_call_id}_{i}"
+        send_log(f"Creating task for parallel instance {i+1} with ID {instance_id}", "🔄")
+        
+        # Each instance gets its own task
+        parallel_tasks.append(run_browser_task(
+            evaluation_task,
+            headless=headless,
+            tool_call_id=instance_id,
+            api_key=api_key
+        ))
+    
+    # Wait for all tasks to complete
+    combined_results = []
+    combined_screenshots = []
+    
+    try:
+        # gather() runs all the tasks concurrently and returns their results
+        parallel_results = await asyncio.gather(*parallel_tasks, return_exceptions=True)
+        
+        send_log(f"All {len(parallel_results)} parallel evaluations completed", "✅")
+        
+        # Process the results from each parallel task
+        for i, result in enumerate(parallel_results):
+            if isinstance(result, Exception):
+                # Handle exception cases
+                error_msg = f"Error in parallel instance {i+1}: {result}\n{traceback.format_exc()}"
+                send_log(error_msg, "❌")
+                combined_results.append(f"Instance {i+1} Error: {result}")
+            else:
+                # Handle successful results
+                instance_result = result.get("result", f"No result from instance {i+1}")
+                instance_screenshots = result.get("screenshots", [])
+                
+                # Add instance number to screenshots for identification
+                for screenshot in instance_screenshots:
+                    screenshot["instance"] = i+1
+                
+                combined_results.append(f"Instance {i+1} Result: {instance_result}")
+                combined_screenshots.extend(instance_screenshots)
+                
+                send_log(f"Instance {i+1}: Received {len(instance_screenshots)} screenshots", "📸")
+        
+        # Create a combined result
+        agent_final_result = "\n\n".join(combined_results)
+        screenshots = combined_screenshots
+        
+        send_log(f"Combined {len(screenshots)} screenshots from all parallel instances", "📸")
+        
+    except Exception as parallel_error:
+        error_msg = f"Error coordinating parallel browser tasks: {parallel_error}\n{traceback.format_exc()}"
+        send_log(error_msg, "❌")
+        agent_final_result = f"Error in parallel execution: {parallel_error}"
+        screenshots = []
+
     # Format the agent result in a more user-friendly way, including console and network errors
     formatted_result = format_agent_result(agent_final_result, url, task, console_log_storage, network_request_storage)
     

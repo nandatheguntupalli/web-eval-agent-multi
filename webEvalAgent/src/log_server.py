@@ -152,15 +152,28 @@ async def send_browser_view(image_data_url: str, instance_id: str = None):
         pass
     except Exception:
         pass
+    
+    # Ensure we have a valid instance_id for multi-browser support
+    if not instance_id:
+        instance_id = "default"
+    elif not isinstance(instance_id, str):
+        instance_id = str(instance_id)
         
     try:
         # Include instance_id in the emitted data to support parallel instances
+        # We emit the instance ID as a separate property to ensure the dashboard
+        # can properly distinguish between different browser instances
         socketio.emit('browser_update', {
             'data': image_data_url,
-            'instance_id': instance_id
+            'instance_id': instance_id,
+            'timestamp': datetime.now().strftime('%H:%M:%S.%f')[:-3]  # Add timestamp for sorting
         })
-    except Exception:
-        pass
+    except Exception as e:
+        try:
+            send_log(f"Error sending browser view for instance {instance_id}: {e}", "❌", log_type='status')
+        except Exception:
+            # Last resort fallback if even send_log fails
+            pass
 
 # --- Agent Control Handler ---
 @socketio.on('agent_control')
