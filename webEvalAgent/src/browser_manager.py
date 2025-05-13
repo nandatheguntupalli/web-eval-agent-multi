@@ -276,7 +276,26 @@ class PlaywrightBrowserManager:
             # Send to frontend via SocketIO
             try:
                 # Use asyncio.create_task to avoid blocking the CDP event handler
-                asyncio.create_task(send_browser_view(image_data_url))
+                from .log_server import send_browser_view
+                
+                # Generate a unique instance ID based on object ID
+                instance_id = f"browser-{id(self)}"
+                
+                # Send to the normal dashboard
+                asyncio.create_task(send_browser_view(image_data_url, instance_id=instance_id))
+                
+                # Try to send to browser stream server if available
+                try:
+                    import aiohttp
+                    import json
+                    async with aiohttp.ClientSession() as session:
+                        await session.post(
+                            "http://localhost:8080/update_screenshot",
+                            json={"agent_id": instance_id, "screenshot": image_data}
+                        )
+                except Exception:
+                    # Silently ignore errors connecting to browser stream server
+                    pass
             except Exception:
                 pass
 
@@ -292,7 +311,6 @@ class PlaywrightBrowserManager:
                         try: await self.cdp_session.detach()
                         except: pass
                         self.cdp_session = None
-
 
     # --- Input Handling ---
     async def handle_browser_input(self, event_type: str, details: Dict) -> None:

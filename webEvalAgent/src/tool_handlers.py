@@ -24,6 +24,9 @@ import time  # Ensure time is imported at the top level
 # Import playwright directly for browser state setup
 from playwright.async_api import async_playwright
 
+# Import subprocess for starting browser stream server
+import subprocess
+
 # Constants for limiting output
 MAX_ERROR_OUTPUT_CHARS = 100000  # Maximum characters to include in error output (increased from 10000)
 MAX_TIMELINE_CHARS = 100000      # Maximum characters for the timeline section (increased from 60000)
@@ -54,6 +57,8 @@ async def handle_web_evaluation(arguments: Dict[str, Any], ctx: Context, api_key
     Returns:
         list[List[Any]]: The evaluation results, including console logs, network requests, and screenshots
     """
+    browser_stream_process = None
+
     # Initialize log server immediately (if not already running)
     try:
         start_log_server()
@@ -89,8 +94,41 @@ async def handle_web_evaluation(arguments: Dict[str, Any], ctx: Context, api_key
         parallel_instances = 1
 
     send_log(f"Handling web evaluation call with context: {ctx}", "🤔")
+    
+    # If running multiple instances, start the browser stream server
     if parallel_instances > 1:
         send_log(f"Running evaluation with {parallel_instances} parallel browser instances", "🔄")
+        
+        # Start the browser stream server
+        try:
+            # Kill any existing browser stream processes
+            try:
+                subprocess.run(["pkill", "-f", "browser_stream.py"], capture_output=True)
+            except Exception as e:
+                send_log(f"Warning: Could not kill existing browser stream processes: {e}", "⚠️", log_type='status')
+            
+            # Find browser stream file path
+            browser_stream_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "browser_stream.py")
+            
+            if os.path.exists(browser_stream_file):
+                # Start the server as a subprocess
+                browser_stream_process = subprocess.Popen(
+                    ["python", browser_stream_file],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE
+                )
+                
+                # Give the server time to start
+                await asyncio.sleep(2)
+                send_log("Browser stream server started on http://localhost:8080", "🚀", log_type='status')
+                
+                # Open browser stream in a new tab
+                import webbrowser
+                webbrowser.open_new_tab("http://localhost:8080")
+            else:
+                send_log(f"Warning: Could not find browser_stream.py at {browser_stream_file}", "⚠️", log_type='status')
+        except Exception as e:
+            send_log(f"Warning: Could not start browser stream server: {e}", "⚠️", log_type='status')
     
     # Ensure URL has a protocol (add https:// if missing)
     if not url.startswith(("http://", "https://", "file://", "data:", "chrome:", "javascript:")):
@@ -196,6 +234,20 @@ async def handle_web_evaluation(arguments: Dict[str, Any], ctx: Context, api_key
         send_log(error_msg, "❌")
         agent_final_result = f"Error in parallel execution: {parallel_error}"
         screenshots = []
+
+    finally:
+        # Clean up browser stream process if it exists
+        if browser_stream_process:
+            try:
+                browser_stream_process.terminate()
+                send_log("Browser stream server terminated", "🛑", log_type='status')
+            except Exception as e:
+                send_log(f"Warning: Could not terminate browser stream process: {e}", "⚠️", log_type='status')
+                # Force kill if terminate fails
+                try:
+                    browser_stream_process.kill()
+                except Exception:
+                    pass
 
     # Format the agent result in a more user-friendly way, including console and network errors
     formatted_result = format_agent_result(agent_final_result, url, task, console_log_storage, network_request_storage)
