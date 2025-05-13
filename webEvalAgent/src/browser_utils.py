@@ -747,9 +747,7 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
         browser_config = BrowserConfig(
             disable_security=True, 
             headless=headless, 
-            cdp_url=cdp_url,
-            handle_sigint=False,  # Don't capture SIGINT to avoid creating additional windows
-            reuse_browser=True    # Reuse the existing browser instead of creating a new one
+            cdp_url=cdp_url
         )
         agent_browser = Browser(config=browser_config)
         agent_browser.playwright = playwright
