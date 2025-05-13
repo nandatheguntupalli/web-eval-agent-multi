@@ -587,6 +587,10 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
     global agent_instance, console_log_storage, network_request_storage, screenshot_storage, original_create_context, _original_bring_to_front
     global active_cdp_session, active_screencast_running
     
+    # Initialize key local variables outside the try block to ensure they're in scope for the callback
+    local_agent_instance = None
+    local_screenshot_storage = []
+    
     # Generate a more distinctive instance ID for parallel execution
     if tool_call_id and '_' in tool_call_id:
         # Extract the instance number if it's a parallel instance
@@ -624,6 +628,81 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
 
     warnings.filterwarnings("ignore", category=UserWarning)
     set_verbose(False)
+    
+    # Define the state callback function that will be used by the agent
+    # This must be defined early to avoid reference issues
+    async def state_callback(browser_state, agent_output, step_number):
+        """Callback function for agent state changes.
+        This will be called as the agent takes steps and updates its state.
+        
+        Args:
+            browser_state: The current state of the browser
+            agent_output: The output from the agent for this step
+            step_number: The current step number
+        """
+        nonlocal local_agent_instance, local_screenshot_storage
+        
+        # Send agent output with type 'agent'
+        send_log(f"[{instance_id}] Step {step_number}", "📍", log_type='agent')
+        send_log(f"[{instance_id}] URL: {browser_state.url}", "🔗", log_type='agent')
+
+        # Capture screenshot at each step
+        try:
+            # Check if local_agent_instance exists and has necessary attributes
+            if local_agent_instance and hasattr(local_agent_instance, 'browser_context'):
+                try:
+                    # Use the provided helper method to get the current page
+                    current_page = await local_agent_instance.browser_context.get_current_page()
+
+                    if current_page:
+                        try:
+                            # Take screenshot
+                            screenshot_bytes = await current_page.screenshot(type='jpeg', quality=80)
+                            screenshot_base64 = base64.b64encode(screenshot_bytes).decode('utf-8')
+                            
+                            # Log screenshot size for debugging
+                            send_log(f"[{instance_id}] Screenshot captured: {len(screenshot_bytes)} bytes, {len(screenshot_base64)} base64 chars", "📊", log_type='status')
+                            
+                            # Store screenshot with metadata
+                            local_screenshot_storage.append({
+                                'step': step_number,
+                                'url': browser_state.url,
+                                'timestamp': asyncio.get_event_loop().time(),
+                                'screenshot': screenshot_base64,
+                                'instance_id': instance_id
+                            })
+                            
+                            send_log(f"[{instance_id}] Screenshot stored in storage (total: {len(local_screenshot_storage)})", "📸", log_type='status')
+                            
+                            # Send to main dashboard
+                            try:
+                                from .log_server import send_browser_view
+                                await send_browser_view(f"data:image/jpeg;base64,{screenshot_base64}", instance_id=instance_id)
+                            except Exception as e:
+                                send_log(f"[{instance_id}] Error sending screenshot to dashboard: {e}", "⚠️", log_type='status')
+                            
+                            # Re-inject the overlay
+                            send_log(f"[{instance_id}] Re-injecting overlay after step {step_number} into page {current_page.url}", "🔄", log_type='status')
+                        except Exception as screenshot_error:
+                            send_log(f"[{instance_id}] Error capturing screenshot: {screenshot_error}", "⚠️", log_type='status')
+                    else:
+                        send_log(f"[{instance_id}] Could not get current page from agent context for step {step_number}", "⚠️", log_type='status')
+                except Exception as page_error:
+                    send_log(f"[{instance_id}] Error getting current page: {page_error}", "⚠️", log_type='status')
+            else:
+                # This can happen early in the process before agent is fully initialized
+                if step_number > 1:  # Only log after the first step to avoid confusion
+                    send_log(f"[{instance_id}] Agent instance or browser context not available for step {step_number}", "⚠️", log_type='status')
+
+        except Exception as e:
+            # Add traceback for debugging other potential errors
+            import traceback
+            tb_str = traceback.format_exc()
+            send_log(f"[{instance_id}] Failed to capture screenshot or re-inject overlay after step: {e}\n{tb_str}", "⚠️", log_type='status')
+
+        # Ensure agent_output is a string before logging
+        output_str = str(agent_output)
+        send_log(f"[{instance_id}] Agent Output: {output_str}", "💬", log_type='agent')
 
     try:
         # Apply the patch to prevent focus stealing
@@ -912,74 +991,20 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
             })
         send_log(f"[{instance_id}] LLM ({llm.model}) configured.", "🤖", log_type='status')
 
-        # --- Agent Callback ---
-        async def state_callback(browser_state, agent_output, step_number):
-            # Use local instance variables
-            local_agent_instance = agent_instance
-            local_screenshot_storage = screenshot_storage # Local list for screenshots
-
-            # Send agent output with type 'agent'
-            send_log(f"[{instance_id}] Step {step_number}", "📍", log_type='agent')
-            send_log(f"[{instance_id}] URL: {browser_state.url}", "🔗", log_type='agent')
-
-            # Capture screenshot at each step
-            try:
-                if local_agent_instance and local_agent_instance.browser_context:
-                    # Use the provided helper method to get the current page
-                    current_page = await local_agent_instance.browser_context.get_current_page()
-
-                    if current_page:
-                        # Take screenshot
-                        screenshot_bytes = await current_page.screenshot(type='jpeg', quality=80)
-                        screenshot_base64 = base64.b64encode(screenshot_bytes).decode('utf-8')
-                        
-                        # Log screenshot size for debugging
-                        send_log(f"[{instance_id}] Screenshot captured: {len(screenshot_bytes)} bytes, {len(screenshot_base64)} base64 chars", "📊", log_type='status')
-                        
-                        # Store screenshot with metadata
-                        local_screenshot_storage.append({
-                            'step': step_number,
-                            'url': browser_state.url,
-                            'timestamp': asyncio.get_event_loop().time(),
-                            'screenshot': screenshot_base64,
-                            'instance_id': instance_id
-                        })
-                        
-                        send_log(f"[{instance_id}] Screenshot stored in storage (total: {len(local_screenshot_storage)})", "📸", log_type='status')
-                        
-                        # Send to main dashboard
-                        try:
-                            from .log_server import send_browser_view
-                            await send_browser_view(f"data:image/jpeg;base64,{screenshot_base64}", instance_id=instance_id)
-                        except Exception as e:
-                            send_log(f"[{instance_id}] Error sending screenshot to dashboard: {e}", "⚠️", log_type='status')
-                        
-                        # Re-inject the overlay
-                        send_log(f"[{instance_id}] Re-injecting overlay after step {step_number} into page {current_page.url}", "🔄", log_type='status')
-                    else:
-                        send_log(f"[{instance_id}] Could not get current page from agent context for step {step_number}", "⚠️", log_type='status')
-                else:
-                     send_log(f"[{instance_id}] Agent instance or browser context not available for step {step_number}", "⚠️", log_type='status')
-
-            except Exception as e:
-                # Add traceback for debugging other potential errors
-                import traceback
-                tb_str = traceback.format_exc()
-                send_log(f"[{instance_id}] Failed to capture screenshot or re-inject overlay after step: {e}\n{tb_str}", "⚠️", log_type='status')
-
-            # Ensure agent_output is a string before logging
-            output_str = str(agent_output)
-            send_log(f"[{instance_id}] Agent Output: {output_str}", "💬", log_type='agent')
-
         # --- Initialize and Run Agent ---
+        # Important: Initialize local_agent_instance and local_screenshot_storage BEFORE using them
+        # Create the agent with the callback
         agent = Agent(
             task=task,
             llm=llm,
             browser=agent_browser,
             register_new_step_callback=state_callback
         )
-        # Store in a local variable
+        
+        # Now we set the variables properly before they're used in the callback
         local_agent_instance = agent
+        local_screenshot_storage = screenshot_storage
+        
         # Also store in global for callback reference
         agent_instance = agent
 
