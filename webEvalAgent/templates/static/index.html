@@ -283,7 +283,7 @@
                     </div>
                 </div>
                 <div class="browser-view-wrapper flex-grow overflow-hidden relative">
-                    <img id="browser-view" class="w-full h-full object-contain" />
+                    <canvas id="browser-view" class="w-full h-full object-contain" tabindex="0"></canvas>
                     <!-- Loading Indicator -->
                     <div class="loading-indicator absolute inset-0 flex items-center justify-center bg-light-bg dark:bg-dark-bg bg-opacity-80 dark:bg-opacity-80">
                         <div class="text-center">
@@ -310,7 +310,7 @@
                     </div>
                 </div>
                 <div class="browser-view-wrapper flex-grow overflow-hidden relative">
-                    <img class="browser-view-img w-full h-full object-contain" />
+                    <canvas class="browser-view-canvas w-full h-full object-contain" tabindex="0"></canvas>
                     <!-- Loading Indicator -->
                     <div class="loading-indicator absolute inset-0 flex items-center justify-center bg-light-bg dark:bg-dark-bg bg-opacity-80 dark:bg-opacity-80">
                         <div class="text-center">
@@ -468,96 +468,38 @@
 
         // Setup event handlers for a browser instance
         function setupBrowserInstanceEvents(instance) {
-            const imgElement = instance.imgElement;
-            if (!imgElement) return;
+            const canvasElement = instance.canvasElement;
+            if (!canvasElement) return;
 
-            function getScaledCoordinates(event) {
-                if (!imgElement.naturalWidth || !imgElement.naturalHeight || !imgElement.clientWidth || !imgElement.clientHeight) {
-                    return null;
-                }
-                const rect = imgElement.getBoundingClientRect();
-                const scaleX = imgElement.naturalWidth / imgElement.clientWidth;
-                const scaleY = imgElement.naturalHeight / imgElement.clientHeight;
-                const x = Math.max(0, Math.min(imgElement.naturalWidth, Math.round((event.clientX - rect.left) * scaleX)));
-                const y = Math.max(0, Math.min(imgElement.naturalHeight, Math.round((event.clientY - rect.top) * scaleY)));
-                return { x, y };
-            }
-
-            imgElement.addEventListener('click', (event) => {
-                const coords = getScaledCoordinates(event);
-                if (!coords) return;
-                const buttonName = event.button === 0 ? 'left' : event.button === 1 ? 'middle' : 'right';
-                const inputData = { type: 'click', details: { x: coords.x, y: coords.y, button: buttonName, clickCount: event.detail } };
-                console.debug("Emitting browser click:", inputData.details);
-                socket.emit('browser_input', inputData);
-                event.preventDefault();
-                imgElement.focus();
-            });
-
-            imgElement.addEventListener('wheel', (event) => {
-                const coords = getScaledCoordinates(event);
-                const eventCoords = coords || { x: 0, y: 0 };
-                const inputData = { type: 'scroll', details: { x: eventCoords.x, y: eventCoords.y, deltaX: event.deltaX, deltaY: event.deltaY } };
-                console.debug("Emitting browser scroll:", inputData.details);
-                socket.emit('browser_input', inputData);
-                event.preventDefault();
-            });
-
-            imgElement.addEventListener('keydown', (event) => {
-                const inputData = { type: 'keydown', details: { key: event.key, code: event.code, altKey: event.altKey, ctrlKey: event.ctrlKey, metaKey: event.metaKey, shiftKey: event.shiftKey } };
-                console.debug(`KeyDown: Key=${event.key}, Code=${event.code}`);
-                socket.emit('browser_input', inputData);
-                const nonModifierKeyPressed = !event.metaKey && !event.ctrlKey && !event.altKey;
-                const isProblematicKey = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Tab', 'Enter', 'Backspace', 'Delete', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key);
-                if (nonModifierKeyPressed && isProblematicKey) {
-                    event.preventDefault();
-                }
-            });
-
-            imgElement.addEventListener('keyup', (event) => {
-                const inputData = { type: 'keyup', details: { key: event.key, code: event.code, altKey: event.altKey, ctrlKey: event.ctrlKey, metaKey: event.metaKey, shiftKey: event.shiftKey } };
-                console.debug(`KeyUp: Key=${event.key}, Code=${event.code}`);
-                socket.emit('browser_input', inputData);
-                const nonModifierKeyPressed = !event.metaKey && !event.ctrlKey && !event.altKey;
-                const isProblematicKey = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Tab', 'Enter', 'Backspace', 'Delete', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key);
-                if (nonModifierKeyPressed && isProblematicKey) {
-                    event.preventDefault();
-                }
-            });
-
-            // Setup screenshot buttons
+            // Copy and save screenshot buttons (use canvas)
             const copyBtn = instance.containerElement.querySelector('.copy-screenshot-btn');
             if (copyBtn) {
                 copyBtn.addEventListener('click', async () => {
                     try {
-                        const blob = await fetch(imgElement.src).then(r => r.blob());
-                        await navigator.clipboard.write([
-                            new ClipboardItem({
-                                [blob.type]: blob
-                            })
-                        ]);
-                        
-                        copyBtn.textContent = 'Copied!';
-                        setTimeout(() => {
-                            copyBtn.textContent = 'Copy Screenshot';
-                        }, 1500);
+                        canvasElement.toBlob(async (blob) => {
+                            await navigator.clipboard.write([
+                                new ClipboardItem({ [blob.type]: blob })
+                            ]);
+                            copyBtn.textContent = 'Copied!';
+                            setTimeout(() => { copyBtn.textContent = 'Copy Screenshot'; }, 1500);
+                        }, 'image/png');
                     } catch (err) {
                         console.error('Failed to copy image:', err);
                         copyBtn.textContent = 'Failed!';
-                        setTimeout(() => {
-                            copyBtn.textContent = 'Copy Screenshot';
-                        }, 1500);
+                        setTimeout(() => { copyBtn.textContent = 'Copy Screenshot'; }, 1500);
                     }
                 });
             }
-
             const saveBtn = instance.containerElement.querySelector('.save-screenshot-btn');
             if (saveBtn) {
                 saveBtn.addEventListener('click', () => {
-                    const a = document.createElement('a');
-                    a.href = imgElement.src;
-                    a.download = `screenshot-${instance.id}-${Date.now()}.png`;
-                    a.click();
+                    canvasElement.toBlob((blob) => {
+                        const a = document.createElement('a');
+                        a.href = URL.createObjectURL(blob);
+                        a.download = `screenshot-${instance.id}-${Date.now()}.png`;
+                        a.click();
+                        URL.revokeObjectURL(a.href);
+                    }, 'image/png');
                 });
             }
         }
@@ -567,44 +509,31 @@
             if (!payload || !payload.data) {
                 return;
             }
-
             const imageData = payload.data;
             const instanceId = payload.instance_id || 'default';
-
-            console.debug(`Received browser update for instance: ${instanceId}`);
-
             // Track if default screenshot is ever received
             if (instanceId === 'default') {
                 defaultScreenshotReceived = true;
             }
-
             // Hide main browser view if only parallel instances are present and no default screenshot
             if (instanceId !== 'default' && !defaultScreenshotReceived) {
                 const mainView = document.getElementById('browser-view-default');
                 if (mainView) mainView.style.display = 'none';
             }
-
             // Check if this instance already exists
             if (!browserInstances[instanceId]) {
-                console.log(`Creating new browser instance: ${instanceId}`);
-                
                 // For the default instance, use the pre-existing elements
                 if (instanceId === 'default') {
                     const container = document.getElementById('browser-view-default');
-                    const img = document.getElementById('browser-view');
-                    
-                    if (container && img) {
+                    const canvas = document.getElementById('browser-view');
+                    if (container && canvas) {
                         browserInstances[instanceId] = {
                             id: instanceId,
                             containerElement: container,
-                            imgElement: img,
+                            canvasElement: canvas,
                             label: container.querySelector('.instance-label')
                         };
-                        
-                        // Set up events for default instance
                         setupBrowserInstanceEvents(browserInstances[instanceId]);
-                        
-                        // Hide loading indicator
                         const loadingIndicator = container.querySelector('.loading-indicator');
                         if (loadingIndicator) {
                             loadingIndicator.style.display = 'none';
@@ -614,35 +543,22 @@
                     // Create a new instance from the template
                     const template = document.getElementById('browser-view-template');
                     if (template && browserColumnEl) {
-                        // Clone the template
                         const newContainer = template.cloneNode(true);
                         newContainer.id = `browser-view-${instanceId}`;
                         newContainer.classList.remove('hidden');
-                        
-                        // Update the instance label
                         const label = newContainer.querySelector('.instance-label');
                         if (label) {
                             label.textContent = `(Instance ${instanceId})`;
                         }
-                        
-                        // Get the image element
-                        const img = newContainer.querySelector('.browser-view-img');
-                        
-                        // Store the instance
+                        const canvas = newContainer.querySelector('.browser-view-canvas');
                         browserInstances[instanceId] = {
                             id: instanceId,
                             containerElement: newContainer,
-                            imgElement: img,
+                            canvasElement: canvas,
                             label: label
                         };
-                        
-                        // Add to the DOM
                         browserColumnEl.appendChild(newContainer);
-                        
-                        // Set up events
                         setupBrowserInstanceEvents(browserInstances[instanceId]);
-                        
-                        // Hide loading indicator
                         const loadingIndicator = newContainer.querySelector('.loading-indicator');
                         if (loadingIndicator) {
                             loadingIndicator.style.display = 'none';
@@ -650,13 +566,18 @@
                     }
                 }
             }
-            
-            // Update the image if the instance exists
+            // Update the canvas if the instance exists
             const instance = browserInstances[instanceId];
-            if (instance && instance.imgElement) {
-                instance.imgElement.src = imageData;
-                
-                // Apply running style to the instance container
+            if (instance && instance.canvasElement) {
+                const ctx = instance.canvasElement.getContext('2d');
+                const img = new window.Image();
+                img.onload = function() {
+                    instance.canvasElement.width = img.width;
+                    instance.canvasElement.height = img.height;
+                    ctx.clearRect(0, 0, img.width, img.height);
+                    ctx.drawImage(img, 0, 0, img.width, img.height);
+                };
+                img.src = imageData;
                 instance.containerElement.classList.add('is-running');
             }
         });
