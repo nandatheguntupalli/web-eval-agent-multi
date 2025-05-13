@@ -613,7 +613,6 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
     playwright_browser = None
     agent_browser = None # browser-use Browser instance
     local_original_create_context = None # To store original method for this run's finally block
-    screenshot_client = None # For browser stream server communication
 
     # Configure logging suppression
     logging.basicConfig(level=logging.CRITICAL) # Set root logger level first
@@ -627,20 +626,6 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
     set_verbose(False)
 
     try:
-        # Check if browser stream server is running at localhost:8080
-        try:
-            import aiohttp
-            async with aiohttp.ClientSession() as session:
-                try:
-                    response = await session.get("http://localhost:8080", timeout=1.0)
-                    if response.status == 200:
-                        screenshot_client = aiohttp.ClientSession()
-                        send_log(f"[{instance_id}] Browser stream server detected - will upload screenshots", "🖥️", log_type='status')
-                except Exception:
-                    send_log(f"[{instance_id}] No browser stream server detected", "ℹ️", log_type='status')
-        except ImportError:
-            send_log(f"[{instance_id}] aiohttp not available, browser stream server support disabled", "⚠️", log_type='status')
-
         # Apply the patch to prevent focus stealing
         global _original_bring_to_front
         _original_bring_to_front = PlaywrightPage.bring_to_front
@@ -648,12 +633,14 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
         
         # --- Initialize Playwright Directly ---
         playwright = await async_playwright().start()
-        # Launch with CDP enabled
+        
+        # Launch with CDP enabled - Only create one browser window that will be used
         playwright_browser = await playwright.chromium.launch(
             headless=headless,  # Use the provided headless parameter
             args=[
                 "--remote-debugging-port=0",  # Use dynamic port to avoid conflicts in parallel runs
-                f"--window-name=Browser {instance_id}"  # Set window name to help distinguish instances
+                f"--window-name=Browser {instance_id}",  # Set window name to help distinguish instances
+                "--no-startup-window"  # Prevent empty browser windows from opening
             ]
         )
         
@@ -677,8 +664,14 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
         except (AttributeError, TypeError) as e:
             send_log(f"[{instance_id}] Warning: Could not determine CDP URL: {e}", "⚠️", log_type='status')
         
-        # Create browser with CDP URL if available
-        browser_config = BrowserConfig(disable_security=True, headless=headless, cdp_url=cdp_url)
+        # Create browser with CDP URL if available and set proper configuration
+        browser_config = BrowserConfig(
+            disable_security=True, 
+            headless=headless, 
+            cdp_url=cdp_url,
+            handle_sigint=False,  # Don't capture SIGINT to avoid creating additional windows
+            reuse_browser=True    # Reuse the existing browser instead of creating a new one
+        )
         agent_browser = Browser(config=browser_config)
         agent_browser.playwright = playwright
         agent_browser.playwright_browser = playwright_browser
@@ -725,18 +718,6 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
                     try:
                         # Include instance ID in view name to distinguish in parallel mode
                         await send_browser_view(image_data_url, instance_id=instance_id)
-                        
-                        # Try to send to browser stream server if available
-                        try:
-                            import aiohttp
-                            async with aiohttp.ClientSession() as session:
-                                await session.post(
-                                    "http://localhost:8080/update_screenshot",
-                                    json={"agent_id": instance_id, "screenshot": image_data}
-                                )
-                        except Exception:
-                            # Silently ignore errors connecting to browser stream server
-                            pass
                     except Exception:
                         pass
                     
@@ -799,18 +780,6 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
                             try:
                                 from .log_server import send_browser_view
                                 await send_browser_view(f"data:image/jpeg;base64,{screenshot_b64}", instance_id=instance_id)
-                                
-                                # Try to send to browser stream server if available
-                                try:
-                                    import aiohttp
-                                    async with aiohttp.ClientSession() as session:
-                                        await session.post(
-                                            "http://localhost:8080/update_screenshot",
-                                            json={"agent_id": instance_id, "screenshot": screenshot_b64}
-                                        )
-                                except Exception:
-                                    # Silently ignore errors connecting to browser stream server
-                                    pass
                             except Exception:
                                 pass
                         except Exception as e:
@@ -978,17 +947,12 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
                         
                         send_log(f"[{instance_id}] Screenshot stored in storage (total: {len(local_screenshot_storage)})", "📸", log_type='status')
                         
-                        # Send to browser stream server if available
+                        # Send to main dashboard
                         try:
-                            import aiohttp
-                            async with aiohttp.ClientSession() as session:
-                                await session.post(
-                                    "http://localhost:8080/update_screenshot",
-                                    json={"agent_id": instance_id, "screenshot": screenshot_base64}
-                                )
-                        except Exception:
-                            # Silently ignore errors connecting to browser stream server
-                            pass
+                            from .log_server import send_browser_view
+                            await send_browser_view(f"data:image/jpeg;base64,{screenshot_base64}", instance_id=instance_id)
+                        except Exception as e:
+                            send_log(f"[{instance_id}] Error sending screenshot to dashboard: {e}", "⚠️", log_type='status')
                         
                         # Re-inject the overlay
                         send_log(f"[{instance_id}] Re-injecting overlay after step {step_number} into page {current_page.url}", "🔄", log_type='status')
@@ -1071,14 +1035,6 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
                 await local_cdp_session.send("Page.stopScreencast")
                 await local_cdp_session.detach()
             except Exception as e:
-                pass
-        
-        # Close screenshot client if it was created
-        if screenshot_client:
-            try:
-                await screenshot_client.close()
-                send_log(f"[{instance_id}] Screenshot client closed", "🧹", log_type='status')
-            except Exception:
                 pass
         
         # Restore the original bring_to_front method if this is the last instance

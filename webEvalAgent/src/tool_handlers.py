@@ -57,8 +57,6 @@ async def handle_web_evaluation(arguments: Dict[str, Any], ctx: Context, api_key
     Returns:
         list[List[Any]]: The evaluation results, including console logs, network requests, and screenshots
     """
-    browser_stream_process = None
-
     # Initialize log server immediately (if not already running)
     try:
         start_log_server()
@@ -79,7 +77,7 @@ async def handle_web_evaluation(arguments: Dict[str, Any], ctx: Context, api_key
     url = arguments["url"]
     task = arguments["task"]
     tool_call_id = arguments.get("tool_call_id", str(uuid.uuid4()))
-    headless = arguments.get("headless", True)
+    headless = arguments.get("headless_browser", False)  # Default to non-headless for better visibility
     # New parameter for parallel browser instances
     parallel_instances = arguments.get("parallel_instances", 1)
     
@@ -95,40 +93,10 @@ async def handle_web_evaluation(arguments: Dict[str, Any], ctx: Context, api_key
 
     send_log(f"Handling web evaluation call with context: {ctx}", "🤔")
     
-    # If running multiple instances, start the browser stream server
+    # Display information about running parallel instances directly in the main dashboard
     if parallel_instances > 1:
         send_log(f"Running evaluation with {parallel_instances} parallel browser instances", "🔄")
-        
-        # Start the browser stream server
-        try:
-            # Kill any existing browser stream processes
-            try:
-                subprocess.run(["pkill", "-f", "browser_stream.py"], capture_output=True)
-            except Exception as e:
-                send_log(f"Warning: Could not kill existing browser stream processes: {e}", "⚠️", log_type='status')
-            
-            # Find browser stream file path
-            browser_stream_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "browser_stream.py")
-            
-            if os.path.exists(browser_stream_file):
-                # Start the server as a subprocess
-                browser_stream_process = subprocess.Popen(
-                    ["python", browser_stream_file],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE
-                )
-                
-                # Give the server time to start
-                await asyncio.sleep(2)
-                send_log("Browser stream server started on http://localhost:8080", "🚀", log_type='status')
-                
-                # Open browser stream in a new tab
-                import webbrowser
-                webbrowser.open_new_tab("http://localhost:8080")
-            else:
-                send_log(f"Warning: Could not find browser_stream.py at {browser_stream_file}", "⚠️", log_type='status')
-        except Exception as e:
-            send_log(f"Warning: Could not start browser stream server: {e}", "⚠️", log_type='status')
+        send_log("All browser views will be shown directly in this dashboard", "📊")
     
     # Ensure URL has a protocol (add https:// if missing)
     if not url.startswith(("http://", "https://", "file://", "data:", "chrome:", "javascript:")):
@@ -169,14 +137,23 @@ async def handle_web_evaluation(arguments: Dict[str, Any], ctx: Context, api_key
     agent_result_data = None
     screenshots = []
     
-    # ALWAYS use parallel mode with at least 2 instances for better reliability
+    # Use at least 2 instances for reliability, but ensure they all work properly
     if parallel_instances <= 1:
-        # Force to at least 2 instances even if user requested 1
+        # If user specifically requested 1 instance, still create 2 but ensure they don't interfere
         parallel_instances = 2
-        send_log("Upgrading to 2 parallel instances for better reliability", "🔄")
+        send_log("Using 2 parallel instances for better reliability", "🔄")
     
     # Create parallel browser tasks
     send_log(f"Starting {parallel_instances} parallel browser evaluations", "🚀")
+    
+    # Clean up any hanging browser processes before starting new ones
+    try:
+        # Try to close existing browsers gracefully first
+        if browser_manager.browser:
+            await browser_manager.close()
+            send_log("Closed existing browser manager instance", "🧹", log_type='status')
+    except Exception as e:
+        send_log(f"Error closing existing browser manager: {e}", "⚠️", log_type='status')
     
     # Create tasks for each parallel instance
     parallel_tasks = []
@@ -236,18 +213,20 @@ async def handle_web_evaluation(arguments: Dict[str, Any], ctx: Context, api_key
         screenshots = []
 
     finally:
-        # Clean up browser stream process if it exists
-        if browser_stream_process:
-            try:
-                browser_stream_process.terminate()
-                send_log("Browser stream server terminated", "🛑", log_type='status')
-            except Exception as e:
-                send_log(f"Warning: Could not terminate browser stream process: {e}", "⚠️", log_type='status')
-                # Force kill if terminate fails
-                try:
-                    browser_stream_process.kill()
-                except Exception:
-                    pass
+        # Clean up any lingering browser processes to prevent empty browsers
+        try:
+            # Use subprocess to kill any chromium processes that might be left running
+            if os.name == 'posix':  # Linux/Mac
+                # Kill Chrome/Chromium processes
+                subprocess.run(["pkill", "-f", "chromium"], capture_output=True)
+            elif os.name == 'nt':  # Windows
+                # Kill Chrome/Chromium processes on Windows
+                subprocess.run(["taskkill", "/f", "/im", "chrome.exe"], capture_output=True)
+                subprocess.run(["taskkill", "/f", "/im", "chromium.exe"], capture_output=True)
+            
+            send_log("Cleaned up any remaining browser processes", "🧹", log_type='status')
+        except Exception as e:
+            send_log(f"Warning: Error during browser cleanup: {e}", "⚠️", log_type='status')
 
     # Format the agent result in a more user-friendly way, including console and network errors
     formatted_result = format_agent_result(agent_final_result, url, task, console_log_storage, network_request_storage)

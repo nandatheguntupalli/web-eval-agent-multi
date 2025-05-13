@@ -158,7 +158,11 @@ async def send_browser_view(image_data_url: str, instance_id: str = None):
         instance_id = "default"
     elif not isinstance(instance_id, str):
         instance_id = str(instance_id)
-        
+    
+    # Log that we're sending a browser view update (only occasionally to avoid log spam)
+    if "Instance" in instance_id and (hash(instance_id) % 30 == 0):
+        send_log(f"Sending browser view update for {instance_id}", "🖥️", log_type='status')
+    
     try:
         # Include instance_id in the emitted data to support parallel instances
         # We emit the instance ID as a separate property to ensure the dashboard
@@ -170,7 +174,9 @@ async def send_browser_view(image_data_url: str, instance_id: str = None):
         })
     except Exception as e:
         try:
-            send_log(f"Error sending browser view for instance {instance_id}: {e}", "❌", log_type='status')
+            # Only log occasional errors to avoid spamming
+            if hash(str(e)) % 10 == 0:  
+                send_log(f"Error sending browser view for instance {instance_id}: {e}", "❌", log_type='status')
         except Exception:
             # Last resort fallback if even send_log fails
             pass
