@@ -424,6 +424,7 @@
 
         // Track browser instances
         const browserInstances = {};
+        let defaultScreenshotReceived = false;
 
         // Auto-scroll toggle
         const autoScrollToggle = document.getElementById('auto-scroll-toggle');
@@ -571,6 +572,17 @@
             const instanceId = payload.instance_id || 'default';
 
             console.debug(`Received browser update for instance: ${instanceId}`);
+
+            // Track if default screenshot is ever received
+            if (instanceId === 'default') {
+                defaultScreenshotReceived = true;
+            }
+
+            // Hide main browser view if only parallel instances are present and no default screenshot
+            if (instanceId !== 'default' && !defaultScreenshotReceived) {
+                const mainView = document.getElementById('browser-view-default');
+                if (mainView) mainView.style.display = 'none';
+            }
 
             // Check if this instance already exists
             if (!browserInstances[instanceId]) {

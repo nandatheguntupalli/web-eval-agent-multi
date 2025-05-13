@@ -718,8 +718,7 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
             headless=headless,  # Use the provided headless parameter
             args=[
                 "--remote-debugging-port=0",  # Use dynamic port to avoid conflicts in parallel runs
-                f"--window-name=Browser {instance_id}",  # Set window name to help distinguish instances
-                "--no-startup-window"  # Prevent empty browser windows from opening
+                f"--window-name=Browser {instance_id}"
             ]
         )
         
@@ -976,7 +975,7 @@ async def run_browser_task(task: str, tool_call_id: str = None, api_key: str = N
         # --- Ensure Tool Call ID ---
         if tool_call_id is None:
             tool_call_id = str(uuid.uuid4())
-            send_log(f"[{instance_id}] Generated tool_call_id: {tool_call_id}", "🆔", log_type='status')
+            send_log(f"[{instance_id}] Generated tool_call_id: {tool_call_id}", "��", log_type='status')
 
         # --- LLM Setup ---
         from .env_utils import get_backend_url
